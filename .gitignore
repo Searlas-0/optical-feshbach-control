@@ -1,0 +1,24 @@
+# Python
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# Environments
+.venv/
+venv/
+env/
+*.egg-info/
+
+# Results and logs
+results/
+logs/
+*.npz
+*.npy
+*.pkl
+*.h5
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
