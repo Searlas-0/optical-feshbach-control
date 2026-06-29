@@ -10,8 +10,10 @@ env/
 *.egg-info/
 
 # Results and logs
-results/
-logs/
+results/*
+!results/.gitkeep
+logs/*
+!logs/.gitkeep
 *.npz
 *.npy
 *.pkl
