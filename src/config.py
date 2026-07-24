@@ -14,25 +14,30 @@ class Config(NamedTuple):
     N: int = 100
     dt: float = 0.01
 
+    loss: bool = True
+
     bound_u: bool = True
     bound_v: bool = True
     u_max: float = 40.0
     v_max: float = 20.0
 
+    bound_a: bool = True
+    a_max: float = 40.0
+    a_min: float = 1e-3
+
     seed: int = 0
     sim_num: int = 13
 
-    learning_smooth: float = 1e-2
     num_steps: int = 1000
+    learning_rate: float = 1e-2
     beta1: float = 0.9
     beta2: float = 0.999
     eps: float = 1e-8
 
-    loss: bool = True
 
-    smooth: bool = False
     u_smooth: float = 0.0
     v_smooth: float = 0.0
+    a_smooth: float = 0.0
 
     use_jit: bool = True
     use_x64: bool = True
@@ -47,13 +52,17 @@ class Config(NamedTuple):
         t_interval: float = 1.0,
         N: int = 100,
         dt: float | None = None,
-        u_max: float = 9999.0,
-        v_max: float = 9999.0,
-        a_max: float = 9999.0,
+        u_bound: bool = True,
+        v_bound: bool = True,
+        u_max: float = 40.0,
+        v_max: float = 40.0,
+        a_bound: bool = True,
+        a_max: float = 40.0,
+        a_min: float = 1e-5,
         seed: int = 0,
         sim_num: int = 13,
-        learning_smooth: float = 1e-2,
         num_steps: int = 1000,
+        learning_rate: float = 1e-2,
         beta1: float = 0.9,
         beta2: float = 0.999,
         eps: float = 1e-8,
@@ -83,8 +92,8 @@ class Config(NamedTuple):
             raise ValueError("sim_num must be at least 1.")
         if num_steps < 1:
             raise ValueError("num_steps must be at least 1.")
-        if learning_smooth <= 0.0:
-            raise ValueError("learning_smooth must be positive.")
+        if learning_rate <= 0.0:
+            raise ValueError("learning_rate must be positive.")
         if not 0.0 <= beta1 < 1.0 or not 0.0 <= beta2 < 1.0:
             raise ValueError("beta1 and beta2 must be in [0, 1).")
         if eps <= 0.0:
@@ -104,13 +113,17 @@ class Config(NamedTuple):
             t_interval=t_interval,
             N=N,
             dt=resolved_dt,
+            u_bound = bool(u_bound),
+            v_bound = bool(v_bound),
             u_max=float(u_max),
             v_max=float(v_max),
+            a_bound = bool(a_bound),
             a_max=float(a_max),
+            a_min=float(a_min),
             seed=int(seed),
             sim_num=sim_num,
-            learning_smooth=float(learning_smooth),
             num_steps=num_steps,
+            learning_rate=float(learning_rate),
             beta1=float(beta1),
             beta2=float(beta2),
             eps=float(eps),

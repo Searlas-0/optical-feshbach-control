@@ -1,8 +1,13 @@
+from dataclasses import dataclass, field
 import jax
 import jax.numpy as jnp
 from jax import lax
 import optax
 from config import Config
+
+from dataclasses import dataclass, field
+import jax
+import jax.numpy as jnp
 
 
 class Simulation:
@@ -10,15 +15,6 @@ class Simulation:
         if not isinstance(config, Config):
             raise TypeError("config must be a Config configuration.")
         self.config = config
-        self.initial_raw_data = None
-        self.initial_data = None
-        self.raw_data = None
-        self.data = None
-        self.history = None
-
-    @property
-    def required_controls(self):
-        return ("u", "v") if self.config.loss else ("a_s",)
 
     def _normalise_raw_data(self, raw_data):
         if not isinstance(raw_data, dict):
@@ -44,16 +40,17 @@ class Simulation:
         return arrays
 
     def bounded(self, raw_data):
-        if not self.config.loss:
-            return {"a_s": raw_data["a_s"]}
-
-        u = raw_data["u"]
-        v = raw_data["v"]
-        if self.config.bound_u:
-            u = self.config.u_max * jax.nn.sigmoid(u)
-        if self.config.bound_v:
-            v = self.config.v_max * jnp.tanh(v)
-        return {"u": u, "v": v}
+        c = self.config
+        if c.loss:
+            u = raw_data["u"]
+            v = raw_data["v"]
+            u_bound = c.u_max * jax.nn.sigmoid(u) if c.bound_u else u
+            v_bound = c.v_max * jnp.tanh(v) if c.bound_v else v
+            return {"u": u_bound, "v": v_bound}
+        a = raw_data['a']
+        a_min = c.a_min
+        a_bound = a_min + (c.a_max - a_min) * jax.nn.sigmoid(a)
+        return {'a': a_bound}
 
     def scattering_length(self, data):
         u = jnp.asarray(data["u"], dtype=self.config.dtype)
@@ -61,9 +58,9 @@ class Simulation:
         return self.config.a_bg * (1.0 + u / (-v - u + 0.5j))
 
     def solve_eta(self, a_s):
-        a_s = jnp.asarray(a_s, dtype=self.config.complex_dtype)
-        num_points = a_s.shape[0]
-        num_steps = num_points - 1
+        c = self.config
+        num_steps = c.N 
+        num_points = num_steps + 1
         eta_0 = -4.0 * jnp.pi * a_s[0]
         eta = jnp.zeros_like(a_s).at[0].set(eta_0)
 
@@ -72,7 +69,7 @@ class Simulation:
         j = jnp.arange(num_steps)
 
         def time_step(history, k):
-            diffs = history[1:] - history[:-1]
+            diffs = jnp.diff(history)
             valid = j < (k - 1)
             m = k - j
             safe_m = jnp.maximum(m, 1)
@@ -104,23 +101,23 @@ class Simulation:
         return self.trapezoid(integrand, jnp.diff(a_s)) / (8.0 * jnp.pi)
 
     def _smoothness_penalty(self, data):
-        if not self.config.smooth:
-            return jnp.asarray(0.0, dtype=self.config.dtype)
+        c = self.config
+        if not c.smooth:
+            return jnp.asarray(0.0, dtype=c.dtype)
 
-        dt = self.config.dt
+        dt = c.dt
 
-        if self.config.loss:
+        if c.loss:
             u_rate = jnp.diff(data["u"]) 
-            v_rate = jnp.diff(data["v"]) / self.config.dt
+            v_rate = jnp.diff(data["v"]) 
             return (
-                self.config.u_smooth * jnp.mean(u_rate**2)
-                + self.config.v_smooth * jnp.mean(v_rate**2)
+                c.u_smooth * jnp.sum(u_rate**2) / dt
+                + c.v_smooth * jnp.sum(v_rate**2) / dt
             )
+        a_rate = jnp.diff(data["a_s"])
+        return c.a_smooth * jnp.mean(a_rate**2) / dt
 
-        a_rate = jnp.diff(data["a_s"]) / self.config.dt
-        return self.config.a_smooth * jnp.mean(a_rate**2)
-
-    def _single_objective(self, raw_data):
+    def loss_fn(self, raw_data):
         data = self.bounded(raw_data)
         if self.config.loss:
             a_s = self.scattering_length(data)
@@ -130,52 +127,41 @@ class Simulation:
             a_s = data["a_s"]
             eta = self.solve_eta(a_s)
             objective = self.energy_density(a_s, eta)
-        return jnp.real(objective) - self._smoothness_penalty(data)
-
-    def _objective_values(self, raw_data):
-        sample = next(iter(raw_data.values()))
-        if sample.ndim == 1:
-            return self._single_objective(raw_data)[None]
-        return jax.vmap(self._single_objective)(raw_data)
-
-    def objective(self, raw_data):
-        raw_data = self._normalise_raw_data(raw_data)
-        values = self._objective_values(raw_data)
-        return values[0] if next(iter(raw_data.values())).ndim == 1 else values
-
+            loss = -objective + self._smoothness_penalty(data)
+            return loss, objective
+        
     def optimise(self, raw_data):
+        c = self.config
         raw_data = self._normalise_raw_data(raw_data)
-        self.initial_raw_data = raw_data
-        self.initial_data = self.bounded(raw_data)
 
         optimiser = optax.adam(
-            learning_rate=self.config.learning_rate,
-            b1=self.config.beta1,
-            b2=self.config.beta2,
-            eps=self.config.eps,
+            learning_rate=c.learning_rate,
+            b1=c.beta1,
+            b2=c.beta2,
+            eps=c.eps,
         )
         opt_state = optimiser.init(raw_data)
 
-        def train_step(current, current_opt_state):
-            def loss_fn(candidate):
-                return -jnp.mean(self._objective_values(candidate))
+        def train_step(current_data, current_opt_state):
+            (loss, obj) , grads = jax.value_and_grad(
+                self.loss_fn,
+                has_aux = True
+            )(current_data)
+            updates, next_opt_state = optimiser.update(grads, current_opt_state, current_data)
+            updated = optax.apply_updates(current_data, updates)
+            return updated, next_opt_state, obj
 
-            _, grads = jax.value_and_grad(loss_fn)(current)
-            updates, next_opt_state = optimiser.update(grads, current_opt_state, current)
-            updated = optax.apply_updates(current, updates)
-            return updated, next_opt_state, self._objective_values(updated)
-
-        if self.config.use_jit:
+        if c.use_jit:
             train_step = jax.jit(train_step)
 
         history = []
-        for _ in range(self.config.num_steps):
+        for _ in range(c.num_steps):
             raw_data, opt_state, objectives = train_step(raw_data, opt_state)
             history.append(objectives)
+        history = jnp.stack(history)
 
-        self.raw_data = raw_data
-        self.data = self.bounded(raw_data)
-        self.history = jnp.stack(history)
-        if next(iter(raw_data.values())).ndim == 1:
-            self.history = self.history[:, 0]
-        return self.data
+        return {
+            "raw": raw_data,
+            "bound": self.bounded(raw_data),
+            "history": history,
+        }

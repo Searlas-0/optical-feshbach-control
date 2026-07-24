@@ -148,3 +148,9 @@ class Test:
         ax.legend()
         fig.tight_layout()
         return fig, ax
+
+config = Config()
+test_config = config.init()
+test = Test(test_config)
+test_results = test.results
+
