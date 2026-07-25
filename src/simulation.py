@@ -16,6 +16,10 @@ class Simulation:
             raise TypeError("config must be a Config configuration.")
         self.config = config
 
+    @property
+    def required_controls(self):
+        return ("u", "v") if self.config.loss else ("a",)
+
     def _normalise_raw_data(self, raw_data):
         if not isinstance(raw_data, dict):
             raise TypeError("raw_data must be a dictionary of control arrays.")
@@ -27,29 +31,33 @@ class Simulation:
                 f"Expected controls {self.required_controls}; missing={sorted(missing)}, extra={sorted(extra)}."
             )
 
-        arrays = {name: jnp.asarray(raw_data[name], dtype=self.config.dtype) for name in self.required_controls}
-        shapes = {array.shape for array in arrays.values()}
+        normalised = {
+            name: jnp.asarray(values, dtype=self.config.dtype)
+            for name, values in raw_data.items()
+        }
+        shapes = {array.shape for array in normalised.values()}
         if len(shapes) != 1:
             raise ValueError("All control arrays must have the same shape.")
-
         shape = next(iter(shapes))
-        if len(shape) not in (1, 2):
-            raise ValueError("Control arrays must have shape (N + 1,) or (batch, N + 1).")
-        if shape[-1] != self.config.N + 1:
-            raise ValueError(f"Control arrays must contain N + 1 = {self.config.N + 1} points.")
-        return arrays
+        if len(shape) != 2 or shape[1] != self.config.N + 1:
+            raise ValueError(
+                f"Control arrays must have shape (batch_size, {self.config.N + 1})."
+            )
+        if shape[0] < 1:
+            raise ValueError("Control arrays must contain at least one batch member.")
+        return normalised
+
 
     def bounded(self, raw_data):
         c = self.config
         if c.loss:
             u = raw_data["u"]
             v = raw_data["v"]
-            u_bound = c.u_max * jax.nn.sigmoid(u) if c.bound_u else u
-            v_bound = c.v_max * jnp.tanh(v) if c.bound_v else v
+            u_bound = c.u_max * jax.nn.sigmoid(u) if c.u_isbound else u
+            v_bound = c.v_max * jnp.tanh(v) if c.v_isbound else v
             return {"u": u_bound, "v": v_bound}
         a = raw_data['a']
-        a_min = c.a_min
-        a_bound = a_min + (c.a_max - a_min) * jax.nn.sigmoid(a)
+        a_bound = c.a_min + (c.a_max - c.a_min) * jax.nn.sigmoid(a) if c.a_isbound else a
         return {'a': a_bound}
 
     def scattering_length(self, data):
@@ -59,6 +67,7 @@ class Simulation:
 
     def solve_eta(self, a_s):
         c = self.config
+        a_s = jnp.asarray(a_s, dtype=c.complex_dtype)
         num_steps = c.N 
         num_points = num_steps + 1
         eta_0 = -4.0 * jnp.pi * a_s[0]
@@ -102,9 +111,6 @@ class Simulation:
 
     def _smoothness_penalty(self, data):
         c = self.config
-        if not c.smooth:
-            return jnp.asarray(0.0, dtype=c.dtype)
-
         dt = c.dt
 
         if c.loss:
@@ -114,7 +120,7 @@ class Simulation:
                 c.u_smooth * jnp.sum(u_rate**2) / dt
                 + c.v_smooth * jnp.sum(v_rate**2) / dt
             )
-        a_rate = jnp.diff(data["a_s"])
+        a_rate = jnp.diff(data["a"])
         return c.a_smooth * jnp.mean(a_rate**2) / dt
 
     def loss_fn(self, raw_data):
@@ -124,11 +130,11 @@ class Simulation:
             eta = self.solve_eta(a_s)
             objective = self.molecule_density(a_s, eta)
         else:
-            a_s = data["a_s"]
+            a_s = data["a"]
             eta = self.solve_eta(a_s)
             objective = self.energy_density(a_s, eta)
-            loss = -objective + self._smoothness_penalty(data)
-            return loss, objective
+        loss = -objective + self._smoothness_penalty(data)
+        return loss, objective
         
     def optimise(self, raw_data):
         c = self.config
@@ -141,15 +147,15 @@ class Simulation:
             eps=c.eps,
         )
         opt_state = optimiser.init(raw_data)
+        value_and_grad = jax.vmap(
+            jax.value_and_grad(self.loss_fn, has_aux=True)
+        )
 
         def train_step(current_data, current_opt_state):
-            (loss, obj) , grads = jax.value_and_grad(
-                self.loss_fn,
-                has_aux = True
-            )(current_data)
+            (_, objectives), grads = value_and_grad(current_data)
             updates, next_opt_state = optimiser.update(grads, current_opt_state, current_data)
             updated = optax.apply_updates(current_data, updates)
-            return updated, next_opt_state, obj
+            return updated, next_opt_state, objectives
 
         if c.use_jit:
             train_step = jax.jit(train_step)
@@ -158,7 +164,7 @@ class Simulation:
         for _ in range(c.num_steps):
             raw_data, opt_state, objectives = train_step(raw_data, opt_state)
             history.append(objectives)
-        history = jnp.stack(history)
+        history = jnp.stack(history, axis=1)
 
         return {
             "raw": raw_data,
