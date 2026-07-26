@@ -344,6 +344,7 @@ class Test:
         print("Parameters used:")
         for name, value in asdict(self.config).items():
             print(f"  {name}: {value}")
+        print(f"  resolved_device: {self.simulation.device}")
         print(f"  batch_size: {batch_size}")
         print(f"  plot_columns: {self.plot_columns}")
 

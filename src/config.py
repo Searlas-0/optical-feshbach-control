@@ -43,6 +43,7 @@ class Config:
 
     use_jit: bool = True
     use_x64: bool = True
+    device: str = "auto"
 
     def __post_init__(self):
         t_interval = float(self.t_interval)
@@ -127,6 +128,10 @@ class Config:
         if self.u_smooth < 0.0 or self.v_smooth < 0.0 or self.a_smooth < 0.0:
             raise ValueError("Smoothness penalties cannot be negative.")
 
+        device = str(self.device).lower()
+        if device not in {"auto", "cpu", "gpu"}:
+            raise ValueError("device must be 'auto', 'cpu', or 'gpu'.")
+
         object.__setattr__(self, "a_bg", float(self.a_bg))
         object.__setattr__(self, "gamma", gamma)
         object.__setattr__(self, "Gamma_max", Gamma_max)
@@ -155,6 +160,7 @@ class Config:
         object.__setattr__(self, "a_smooth", float(self.a_smooth))
         object.__setattr__(self, "use_jit", bool(self.use_jit))
         object.__setattr__(self, "use_x64", bool(self.use_x64))
+        object.__setattr__(self, "device", device)
 
         jax.config.update("jax_enable_x64", self.use_x64)
 

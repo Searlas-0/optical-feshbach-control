@@ -10,6 +10,32 @@ class Simulation:
         if not isinstance(config, Config):
             raise TypeError("config must be a Config configuration.")
         self.config = config
+        self.device = self._resolve_device(config.device)
+
+    @staticmethod
+    def _resolve_device(requested):
+        if requested == "auto":
+            try:
+                gpu_devices = jax.devices("gpu")
+            except RuntimeError:
+                gpu_devices = ()
+            if gpu_devices:
+                return gpu_devices[0]
+            return jax.devices("cpu")[0]
+
+        try:
+            devices = jax.devices(requested)
+        except RuntimeError as error:
+            if requested == "gpu":
+                raise RuntimeError(
+                    "GPU execution was requested, but JAX cannot access a GPU. "
+                    "Install a CUDA-enabled JAX build and run where an NVIDIA "
+                    "driver and GPU are available."
+                ) from error
+            raise
+        if not devices:
+            raise RuntimeError(f"No JAX {requested.upper()} device is available.")
+        return devices[0]
 
     @property
     def required_controls(self):
@@ -27,7 +53,9 @@ class Simulation:
             )
 
         normalised = {
-            name: jnp.asarray(values, dtype=self.config.dtype)
+            name: jax.device_put(
+                jnp.asarray(values, dtype=self.config.dtype), self.device
+            )
             for name, values in raw_data.items()
         }
         shapes = {array.shape for array in normalised.values()}
@@ -141,34 +169,38 @@ class Simulation:
             b2=c.beta2,
             eps=c.eps,
         )
-        opt_state = optimiser.init(raw_data)
         value_and_grad = jax.vmap(
             jax.value_and_grad(self.loss_fn, has_aux=True)
         )
+        objective_fn = jax.vmap(lambda member: self.loss_fn(member)[1])
 
-        def train_step(current_data, current_opt_state):
+        def scan_step(carry, _):
+            current_data, current_opt_state = carry
             (_, objectives), grads = value_and_grad(current_data)
             updates, next_opt_state = optimiser.update(grads, current_opt_state, current_data)
             updated = optax.apply_updates(current_data, updates)
-            return updated, next_opt_state, objectives
+            return (updated, next_opt_state), objectives
+
+        def run_optimisation(initial_data):
+            initial_opt_state = optimiser.init(initial_data)
+            (final_data, _), history_by_step = lax.scan(
+                scan_step,
+                (initial_data, initial_opt_state),
+                xs=None,
+                length=c.num_steps,
+            )
+            history = jnp.swapaxes(history_by_step, 0, 1)
+            final_objectives = objective_fn(final_data)
+            history = jnp.concatenate(
+                [history, final_objectives[:, None]], axis=1
+            )
+            return {
+                "raw": final_data,
+                "bound": self.bounded(final_data),
+                "history": history,
+                "objective": final_objectives,
+            }
 
         if c.use_jit:
-            train_step = jax.jit(train_step)
-
-        history = []
-        for _ in range(c.num_steps):
-            raw_data, opt_state, objectives = train_step(raw_data, opt_state)
-            history.append(objectives)
-        history = jnp.stack(history, axis=1)
-        objective_fn = jax.vmap(lambda member: self.loss_fn(member)[1])
-        if c.use_jit:
-            objective_fn = jax.jit(objective_fn)
-        final_objectives = objective_fn(raw_data)
-        history = jnp.concatenate([history, final_objectives[:, None]], axis=1)
-
-        return {
-            "raw": raw_data,
-            "bound": self.bounded(raw_data),
-            "history": history,
-            "objective": final_objectives,
-        }
+            run_optimisation = jax.jit(run_optimisation, device=self.device)
+        return run_optimisation(raw_data)
