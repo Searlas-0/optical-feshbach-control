@@ -1,13 +1,8 @@
-from dataclasses import dataclass, field
 import jax
 import jax.numpy as jnp
 from jax import lax
 import optax
 from config import Config
-
-from dataclasses import dataclass, field
-import jax
-import jax.numpy as jnp
 
 
 class Simulation:
@@ -165,9 +160,15 @@ class Simulation:
             raw_data, opt_state, objectives = train_step(raw_data, opt_state)
             history.append(objectives)
         history = jnp.stack(history, axis=1)
+        objective_fn = jax.vmap(lambda member: self.loss_fn(member)[1])
+        if c.use_jit:
+            objective_fn = jax.jit(objective_fn)
+        final_objectives = objective_fn(raw_data)
+        history = jnp.concatenate([history, final_objectives[:, None]], axis=1)
 
         return {
             "raw": raw_data,
             "bound": self.bounded(raw_data),
             "history": history,
+            "objective": final_objectives,
         }

@@ -28,7 +28,8 @@ class Config:
     a_min: float = 1e-5
 
     seed: int = 0
-    sim_num: int = 13
+    rng_sim_num: int = 13
+    struct_curves: bool = True
 
     num_steps: int = 1000
     learning_rate: float = 1e-2
@@ -101,10 +102,20 @@ class Config:
             raise ValueError("detuning_max must be positive.")
         v_max = detuning_max / gamma
 
-        sim_num = int(self.sim_num)
+        a_min = float(self.a_min)
+        a_max = float(self.a_max)
+        if a_max <= a_min:
+            raise ValueError("a_max must be greater than a_min.")
+
+        rng_sim_num = int(self.rng_sim_num)
         num_steps = int(self.num_steps)
-        if sim_num < 1:
-            raise ValueError("sim_num must be at least 1.")
+        if rng_sim_num < 0:
+            raise ValueError("rng_sim_num cannot be negative.")
+        if rng_sim_num == 0 and not self.struct_curves:
+            raise ValueError(
+                "At least one initial curve is required; enable struct_curves "
+                "or set rng_sim_num above zero."
+            )
         if num_steps < 1:
             raise ValueError("num_steps must be at least 1.")
         if self.learning_rate <= 0.0:
@@ -113,8 +124,8 @@ class Config:
             raise ValueError("beta1 and beta2 must be in [0, 1).")
         if self.eps <= 0.0:
             raise ValueError("eps must be positive.")
-        if self.u_smooth < 0.0 or self.v_smooth < 0.0:
-            raise ValueError("u_smooth and v_smooth cannot be negative.")
+        if self.u_smooth < 0.0 or self.v_smooth < 0.0 or self.a_smooth < 0.0:
+            raise ValueError("Smoothness penalties cannot be negative.")
 
         object.__setattr__(self, "a_bg", float(self.a_bg))
         object.__setattr__(self, "gamma", gamma)
@@ -129,10 +140,11 @@ class Config:
         object.__setattr__(self, "u_max", u_max)
         object.__setattr__(self, "v_max", v_max)
         object.__setattr__(self, "a_isbound", bool(self.a_isbound))
-        object.__setattr__(self, "a_max", float(self.a_max))
-        object.__setattr__(self, "a_min", float(self.a_min))
+        object.__setattr__(self, "a_max", a_max)
+        object.__setattr__(self, "a_min", a_min)
         object.__setattr__(self, "seed", int(self.seed))
-        object.__setattr__(self, "sim_num", sim_num)
+        object.__setattr__(self, "rng_sim_num", rng_sim_num)
+        object.__setattr__(self, "struct_curves", bool(self.struct_curves))
         object.__setattr__(self, "num_steps", num_steps)
         object.__setattr__(self, "learning_rate", float(self.learning_rate))
         object.__setattr__(self, "beta1", float(self.beta1))
