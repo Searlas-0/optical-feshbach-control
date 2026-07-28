@@ -24,6 +24,6 @@ dependencies:
 
   # Install these through pip inside the conda environment
   - pip:
-      - jax
+      - "jax[cuda12]"
       - optax
       - jaxopt
