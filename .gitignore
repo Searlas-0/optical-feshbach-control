@@ -1,26 +1,25 @@
-# Python
 __pycache__/
-*.pyc
 .ipynb_checkpoints/
-
-# Environments
-.venv/
-venv/
-env/
+*.py[cod]
+.pytest_cache/
+.coverage
 *.egg-info/
-
-# Results and logs
-results/*
-!results/.gitkeep
+.venv/
+build/
+dist/
+results/*.sqlite3
+results/*.sqlite3-*
 logs/*
 !logs/.gitkeep
-*.npz
-*.npy
-*.pkl
-*.h5
 
-# OS/editor files
-.DS_Store
-Thumbs.db
-.vscode/
-.idea/
+# LaTeX build files (keep report sources and final PDFs)
+reports/*.aux
+reports/*.bbl
+reports/*.bcf
+reports/*.blg
+reports/*.fdb_latexmk
+reports/*.fls
+reports/*.log
+reports/*.run.xml
+reports/*.toc
+reports/*-SAVE-ERROR

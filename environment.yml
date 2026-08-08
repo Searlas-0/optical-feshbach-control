@@ -1,29 +1,14 @@
 name: optical-feshbach-control
-
 channels:
   - conda-forge
-
 dependencies:
-  - python=3.10
-  - pip
-
-  # Core scientific stack
+  - python=3.11
+  - jax
+  - jaxopt
   - numpy
-  - scipy
-  - pandas
-  - matplotlib
-
-  # Jupyter
-  - jupyterlab
-  - ipykernel
-
-  # Utilities
   - pyyaml
-  - tqdm
+  - matplotlib
   - pytest
-
-  # Install these through pip inside the conda environment
+  - pip
   - pip:
-      - "jax[cuda12]"
-      - optax
-      - jaxopt
+      - -e .

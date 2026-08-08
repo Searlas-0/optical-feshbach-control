@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "optical-feshbach-control"
+version = "1.0.0"
+description = "Reproducible JAX optimisation of dimensionless inelastic optical Feshbach controls"
+requires-python = ">=3.10"
+dependencies = [
+    "jax>=0.4.30",
+    "jaxopt>=0.8",
+    "numpy>=1.26",
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+plot = ["matplotlib>=3.8"]
+test = ["pytest>=8.0", "matplotlib>=3.8"]
+
+[project.scripts]
+ofc-run = "ofc.run_cli:main"
+ofc-query = "ofc.query_cli:main"
+ofc-plot = "ofc.plot_cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+addopts = "-ra"
+testpaths = ["tests"]

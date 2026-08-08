@@ -1,0 +1,62 @@
+schema_version: 2
+config_id: 7388691636552290904
+name: 88_Sr_N_100_u_max_sweep
+description: 88Sr N=100 sweep over u_max using the current sandbox optimization defaults
+  and 50 Fourier initializations.
+created_utc: '2026-08-07T20:16:32.686369+00:00'
+parameters:
+  N: 100
+  t_interval: 4.0
+  r_bg: -0.008716
+  u_isbound: true
+  v_isbound: true
+  u_max:
+  - 10
+  - 20
+  - 40
+  - 80
+  - 160
+  - 320
+  - 640
+  - 1280
+  - 2560
+  v_max: 1000.0
+  slew_limit: 0.05
+  schedule:
+  - - 1000
+    - 1.0
+  - - 10000
+    - 0.1
+  - - 100000
+    - 0.1
+  optimizer: adam
+  adam_learning_rate: 0.05
+  adam_beta1: 0.9
+  adam_beta2: 0.999
+  adam_eps: 1.0e-08
+  lbfgs_history_size: 100
+  lbfgs_max_linesearch_steps: 200
+  lbfgs_tolerance: 1.0e-06
+  smoothness: 5.0e-07
+  u_smooth: null
+  v_smooth: null
+  sharpness: 5.0e-08
+  u_sharp: null
+  v_sharp: null
+  block_size: 500
+  J_tol: 1.0e-05
+  u_tol: 0.001
+  v_tol: 0.001
+runtime:
+  initialisations: 50
+  fourier_num_modes: 5
+  fourier_rms_amplitude: 0.3
+  fourier_intensity_fraction: 0.3
+  use_jit: true
+  use_x64: true
+  device: cpu
+  concurrent_workers: 1
+  database: results/88_Sr_N_100_u_max_sweep.sqlite3
+query: null
+batch_ids:
+  '{"N":100,"schedule":[[1000,1.0],[10000,0.1],[100000,0.1]],"t_interval":4.0}': 8252113692541670192

@@ -1,0 +1,57 @@
+schema_version: 2
+config_id: 8227926177037004261
+name: smoothening sweep
+description: Canonical default inelastic optical Feshbach optimization
+created_utc: '2026-08-07T05:42:26.273819+00:00'
+parameters:
+  N: 100
+  t_interval: 4.0
+  r_bg: 0.01
+  u_isbound: true
+  v_isbound: true
+  u_max: 70.0
+  v_max: 200.0
+  slew_limit: 0.05
+  schedule:
+  - - 5000
+    - 1.0
+  - - 5000
+    - 0.5
+  - - 7500
+    - 0.5
+  optimizer: adam
+  adam_learning_rate: 0.01
+  adam_beta1: 0.9
+  adam_beta2: 0.999
+  adam_eps: 1.0e-08
+  lbfgs_history_size: 10
+  lbfgs_max_linesearch_steps: 20
+  lbfgs_tolerance: 1.0e-06
+  smoothness:
+  - 1.0
+  - 0
+  - 0.1
+  - 0.01
+  - 0.001
+  u_smooth: null
+  v_smooth: null
+  sharpness: 0.0
+  u_sharp: null
+  v_sharp: null
+  block_size: 500
+  J_tol: 1.0e-05
+  u_tol: 0.001
+  v_tol: 0.001
+runtime:
+  initialisations: 40
+  fourier_num_modes: 5
+  fourier_rms_amplitude: 0.3
+  fourier_intensity_fraction: 0.3
+  use_jit: true
+  use_x64: true
+  device: auto
+  concurrent_workers: 4
+  database: results/results.sqlite3
+query: null
+batch_ids:
+  '{"N":100,"schedule":[[5000,1.0],[5000,0.5],[7500,0.5]],"t_interval":4.0}': 2120638117797354008
