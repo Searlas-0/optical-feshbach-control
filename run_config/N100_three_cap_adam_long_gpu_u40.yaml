@@ -1,0 +1,76 @@
+schema_version: 3
+config_id: 7177515471650749440
+name: N100_three_cap_adam_long_gpu_u40
+description: N=100 long Adam continuation of three selected caps with boundary pruning
+  and tolerance auto-halt.
+created_utc: '2026-08-09T13:15:44.976732+00:00'
+parameters:
+  N: 100
+  t_interval: 4.0
+  r_bg: -0.008716
+  u_isbound: true
+  v_isbound: true
+  v_max: 1000.0
+  slew_limit: 0.05
+  optimizer: adam
+  schedule:
+  - - 1000
+    - 1.0
+  - - 50000
+    - 0.1
+  - - 100000
+    - 0.1
+  - - 1000000
+    - 0.1
+  adam_eps: 1.0e-08
+  u_smooth: null
+  v_smooth: null
+  u_sharp: null
+  v_sharp: null
+  block_size: 1000
+  J_tol: 1.0e-05
+  u_tol: 0.0001
+  v_tol: 0.0001
+  projected_gradient_tol: 0.0001
+  projected_gradient_alpha: 1.0
+  u_max: 40.0
+  adam_learning_rate: 0.1
+  adam_beta1: 0.9
+  adam_beta2: 0.99
+  smoothness: 1.25e-07
+  sharpness: 5.0e-08
+runtime:
+  initialisations: 50
+  fourier_num_modes: 5
+  fourier_rms_amplitude: 0.3
+  fourier_intensity_fraction: 0.3
+  use_jit: true
+  use_x64: true
+  device: gpu
+  concurrent_workers: 1
+  max_cases_per_batch: null
+  auto_halt: true
+  database: results/results.sqlite3
+query:
+  where:
+    status: complete
+    N: 100
+    u_max: 40.0
+    smoothness: 1.25e-07
+    sharpness: 5.0e-08
+  limit: 5
+  order_by: best_score
+  descending: true
+  control_kind: best
+  resume_optimizer: false
+  perturbed: true
+  perturbation_levels:
+  - 0.0005
+  - 0.001
+  - 0.0025
+  - 0.005
+  - 0.01
+  match_parameters: []
+  fallback_where: null
+batch_ids:
+  '{"N":100,"schedule":[[1000,1.0],[50000,0.1],[100000,0.1],[1000000,0.1]],"t_interval":4.0}': 2716489588220356208

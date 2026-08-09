@@ -24,8 +24,10 @@ from typing import Any, Mapping, Sequence
 import yaml
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
+SUPPORTED_SCHEMA_VERSIONS = {2, SCHEMA_VERSION}
 ID_MAX = 2**63 - 1
+DEFAULT_RESULTS_DATABASE = "results/results.sqlite3"
 NON_SWEEP_FIELDS = {
     "u_isbound",
     "v_isbound",
@@ -33,6 +35,7 @@ NON_SWEEP_FIELDS = {
     "block_size",
     "lbfgs_history_size",
     "lbfgs_max_linesearch_steps",
+    "peak_max_linesearch_steps",
 }
 DEFAULT_SCHEDULE = (
     (5_000, 1.0),
@@ -40,6 +43,7 @@ DEFAULT_SCHEDULE = (
     (7_500, 0.5),
     (7_500, 0.5),
 )
+DEFAULT_QUERY_PERTURBATION_LEVELS = (0.0005, 0.001, 0.0025, 0.005, 0.01)
 
 
 def random_id() -> int:
@@ -72,6 +76,13 @@ class ResolvedConfig:
     lbfgs_history_size: int = 10
     lbfgs_max_linesearch_steps: int = 20
     lbfgs_tolerance: float = 1e-6
+    peak_initial_step_size: float = 1e-2
+    peak_min_step_size: float = 1e-12
+    peak_max_step_size: float = 0.1
+    peak_backtracking_factor: float = 0.5
+    peak_step_growth: float = 1.5
+    peak_armijo: float = 1e-4
+    peak_max_linesearch_steps: int = 24
 
     smoothness: float = 1e-5
     u_smooth: float | None = None
@@ -81,9 +92,11 @@ class ResolvedConfig:
     v_sharp: float | None = None
 
     block_size: int = 500
-    J_tol: float = 1e-5
-    u_tol: float | None = 1e-3
-    v_tol: float | None = 1e-3
+    J_tol: float | None = 1e-5
+    u_tol: float | None = 1e-4
+    v_tol: float | None = 1e-4
+    projected_gradient_tol: float | None = 1e-4
+    projected_gradient_alpha: float = 1.0
 
     def __post_init__(self) -> None:
         integer_fields = {
@@ -91,6 +104,7 @@ class ResolvedConfig:
             "block_size": self.block_size,
             "lbfgs_history_size": self.lbfgs_history_size,
             "lbfgs_max_linesearch_steps": self.lbfgs_max_linesearch_steps,
+            "peak_max_linesearch_steps": self.peak_max_linesearch_steps,
         }
         for name, value in integer_fields.items():
             if isinstance(value, bool) or not isinstance(value, Integral) or value < 1:
@@ -112,7 +126,10 @@ class ResolvedConfig:
             "adam_learning_rate": self.adam_learning_rate,
             "adam_eps": self.adam_eps,
             "lbfgs_tolerance": self.lbfgs_tolerance,
-            "J_tol": self.J_tol,
+            "peak_initial_step_size": self.peak_initial_step_size,
+            "peak_min_step_size": self.peak_min_step_size,
+            "peak_max_step_size": self.peak_max_step_size,
+            "projected_gradient_alpha": self.projected_gradient_alpha,
         }
         for name, value in positive.items():
             if isinstance(value, bool) or not isinstance(value, Real):
@@ -123,6 +140,31 @@ class ResolvedConfig:
             object.__setattr__(self, name, value)
         if self.slew_limit > 1.0:
             raise ValueError("slew_limit must not exceed 1.")
+        if self.peak_min_step_size > self.peak_initial_step_size:
+            raise ValueError(
+                "peak_min_step_size must not exceed peak_initial_step_size."
+            )
+        if self.peak_initial_step_size > self.peak_max_step_size:
+            raise ValueError(
+                "peak_initial_step_size must not exceed peak_max_step_size."
+            )
+
+        for name in ("peak_backtracking_factor", "peak_armijo"):
+            value = getattr(self, name)
+            if isinstance(value, bool) or not isinstance(value, Real):
+                raise ValueError(f"{name} must be a finite number in (0, 1).")
+            value = float(value)
+            if not math.isfinite(value) or not 0.0 < value < 1.0:
+                raise ValueError(f"{name} must be a finite number in (0, 1).")
+            object.__setattr__(self, name, value)
+        if (
+            isinstance(self.peak_step_growth, bool)
+            or not isinstance(self.peak_step_growth, Real)
+            or not math.isfinite(float(self.peak_step_growth))
+            or float(self.peak_step_growth) < 1.0
+        ):
+            raise ValueError("peak_step_growth must be finite and at least 1.")
+        object.__setattr__(self, "peak_step_growth", float(self.peak_step_growth))
 
         for name in (
             "smoothness",
@@ -142,7 +184,7 @@ class ResolvedConfig:
                 raise ValueError(f"{name} must be finite and non-negative or null.")
             object.__setattr__(self, name, value)
 
-        for name in ("u_tol", "v_tol"):
+        for name in ("J_tol", "u_tol", "v_tol", "projected_gradient_tol"):
             value = getattr(self, name)
             if value is None:
                 continue
@@ -160,14 +202,20 @@ class ResolvedConfig:
             object.__setattr__(self, name, value)
 
         optimizer = str(self.optimizer).lower()
-        if optimizer not in {"adam", "lbfgs"}:
-            raise ValueError("optimizer must be 'adam' or 'lbfgs'.")
+        if optimizer not in {"adam", "lbfgs", "peak_refinement"}:
+            raise ValueError(
+                "optimizer must be 'adam', 'lbfgs', or 'peak_refinement'."
+            )
         object.__setattr__(self, "optimizer", optimizer)
         object.__setattr__(self, "u_isbound", bool(self.u_isbound))
         object.__setattr__(self, "v_isbound", bool(self.v_isbound))
         object.__setattr__(self, "schedule", normalise_schedule(self.schedule))
-        if optimizer == "lbfgs" and any(multiplier != 1.0 for _, multiplier in self.schedule):
-            raise ValueError("L-BFGS schedule multipliers must all equal 1.0.")
+        if optimizer != "adam" and any(
+            multiplier != 1.0 for _, multiplier in self.schedule
+        ):
+            raise ValueError(
+                "Non-Adam schedule multipliers must all equal 1.0."
+            )
 
     @property
     def dt(self) -> float:
@@ -206,15 +254,80 @@ class RuntimeConfig:
     use_x64: bool = True
     device: str = "auto"
     concurrent_workers: int = 2
-    database: str = "results/results.sqlite3"
+    max_cases_per_batch: int | None = None
+    max_initialisations_per_batch: int | None = None
+    max_steps_per_chunk: int | None = None
+    max_batch_elapsed_seconds: float | None = None
+    max_elapsed_seconds: float | None = None
+    distribute_max_elapsed_across_batches: bool = False
+    repeat_schedule_until_stable: bool = False
+    auto_halt: bool = True
+    # All production configs share one canonical physical database. The
+    # adjacent results.parameters.sqlite3 file is derived automatically.
+    database: str = DEFAULT_RESULTS_DATABASE
 
     def __post_init__(self) -> None:
         for name in ("initialisations", "fourier_num_modes", "concurrent_workers"):
             value = getattr(self, name)
-            minimum = 1
+            minimum = 0 if name == "initialisations" else 1
             if isinstance(value, bool) or not isinstance(value, Integral) or value < minimum:
                 raise ValueError(f"{name} must be an integer >= {minimum}.")
             object.__setattr__(self, name, int(value))
+        if self.max_cases_per_batch is not None:
+            value = self.max_cases_per_batch
+            if isinstance(value, bool) or not isinstance(value, Integral) or value < 1:
+                raise ValueError("max_cases_per_batch must be a positive integer or null.")
+            object.__setattr__(self, "max_cases_per_batch", int(value))
+        if self.max_initialisations_per_batch is not None:
+            value = self.max_initialisations_per_batch
+            if isinstance(value, bool) or not isinstance(value, Integral) or value < 1:
+                raise ValueError(
+                    "max_initialisations_per_batch must be a positive integer or null."
+                )
+            object.__setattr__(self, "max_initialisations_per_batch", int(value))
+        if self.max_steps_per_chunk is not None:
+            value = self.max_steps_per_chunk
+            if isinstance(value, bool) or not isinstance(value, Integral) or value < 1:
+                raise ValueError(
+                    "max_steps_per_chunk must be a positive integer or null."
+                )
+            object.__setattr__(self, "max_steps_per_chunk", int(value))
+        for name in ("max_batch_elapsed_seconds", "max_elapsed_seconds"):
+            value = getattr(self, name)
+            if value is None:
+                continue
+            if isinstance(value, bool) or not isinstance(value, Real):
+                raise ValueError(f"{name} must be finite and positive or null.")
+            value = float(value)
+            if not math.isfinite(value) or value <= 0.0:
+                raise ValueError(f"{name} must be finite and positive or null.")
+            object.__setattr__(self, name, value)
+        if not isinstance(self.repeat_schedule_until_stable, bool):
+            raise ValueError("repeat_schedule_until_stable must be a boolean.")
+        if not isinstance(self.distribute_max_elapsed_across_batches, bool):
+            raise ValueError(
+                "distribute_max_elapsed_across_batches must be a boolean."
+            )
+        if (
+            self.distribute_max_elapsed_across_batches
+            and self.max_elapsed_seconds is None
+        ):
+            raise ValueError(
+                "distribute_max_elapsed_across_batches requires max_elapsed_seconds."
+            )
+        if (
+            self.repeat_schedule_until_stable
+            and self.max_elapsed_seconds is None
+            and self.max_batch_elapsed_seconds is None
+        ):
+            raise ValueError(
+                "repeat_schedule_until_stable requires max_elapsed_seconds or "
+                "max_batch_elapsed_seconds."
+            )
+        if self.max_elapsed_seconds is not None and self.concurrent_workers != 1:
+            raise ValueError(
+                "max_elapsed_seconds requires concurrent_workers: 1 for one global deadline."
+            )
         if not 3 <= self.fourier_num_modes <= 6:
             raise ValueError("fourier_num_modes must be between 3 and 6.")
         for name in ("fourier_rms_amplitude", "fourier_intensity_fraction"):
@@ -224,6 +337,8 @@ class RuntimeConfig:
             object.__setattr__(self, name, value)
         if not 0.0 < self.fourier_intensity_fraction < 1.0:
             raise ValueError("fourier_intensity_fraction must be in (0, 1).")
+        if not isinstance(self.auto_halt, bool):
+            raise ValueError("auto_halt must be a boolean.")
         device = str(self.device).lower()
         if device not in {"auto", "cpu", "gpu"}:
             raise ValueError("device must be 'auto', 'cpu', or 'gpu'.")
@@ -241,6 +356,13 @@ class InitializationQuery:
     order_by: str = "best_score"
     descending: bool = True
     control_kind: str = "best"
+    resume_optimizer: bool = False
+    perturbed: bool = True
+    perturbation_levels: tuple[float, ...] = DEFAULT_QUERY_PERTURBATION_LEVELS
+    match_parameters: tuple[str, ...] = ()
+    discover_parameters: tuple[str, ...] = ()
+    discover_group_parameters: tuple[str, ...] = ()
+    fallback_where: Mapping[str, Any] | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.where, Mapping) or not self.where:
@@ -266,6 +388,139 @@ class InitializationQuery:
         if control_kind not in {"initial", "best", "final"}:
             raise ValueError("query.control_kind must be initial, best, or final.")
         object.__setattr__(self, "control_kind", control_kind)
+        if not isinstance(self.resume_optimizer, bool):
+            raise ValueError("query.resume_optimizer must be a boolean.")
+        if not isinstance(self.perturbed, bool):
+            raise ValueError("query.perturbed must be a boolean.")
+        if self.resume_optimizer and control_kind == "initial":
+            raise ValueError(
+                "query.resume_optimizer requires best or final controls."
+            )
+        if self.resume_optimizer and self.perturbed:
+            raise ValueError(
+                "query.resume_optimizer requires perturbed: false because Adam "
+                "moments only match the exact stored raw controls."
+            )
+
+        levels = self.perturbation_levels
+        if isinstance(levels, (str, bytes)):
+            raise ValueError("query.perturbation_levels must be a non-empty sequence.")
+        try:
+            levels = tuple(levels)
+        except TypeError as exc:
+            raise ValueError(
+                "query.perturbation_levels must be a non-empty sequence."
+            ) from exc
+        if not levels:
+            raise ValueError("query.perturbation_levels must be a non-empty sequence.")
+        normalized_levels = []
+        for level in levels:
+            if isinstance(level, bool) or not isinstance(level, Real):
+                raise ValueError(
+                    "query.perturbation_levels must contain finite values in (0, 1]."
+                )
+            level = float(level)
+            if not math.isfinite(level) or not 0.0 < level <= 1.0:
+                raise ValueError(
+                    "query.perturbation_levels must contain finite values in (0, 1]."
+                )
+            normalized_levels.append(level)
+        if len(set(normalized_levels)) != len(normalized_levels):
+            raise ValueError("query.perturbation_levels must not contain duplicates.")
+        object.__setattr__(self, "perturbation_levels", tuple(normalized_levels))
+
+        match_parameters = self.match_parameters
+        if isinstance(match_parameters, (str, bytes)):
+            raise ValueError("query.match_parameters must be a sequence of parameter names.")
+        try:
+            match_parameters = tuple(match_parameters)
+        except TypeError as exc:
+            raise ValueError(
+                "query.match_parameters must be a sequence of parameter names."
+            ) from exc
+        if any(not isinstance(name, str) or not name for name in match_parameters):
+            raise ValueError("query.match_parameters must contain non-empty strings.")
+        if len(set(match_parameters)) != len(match_parameters):
+            raise ValueError("query.match_parameters must not contain duplicates.")
+        unknown = sorted(set(match_parameters) - set(ResolvedConfig.__dataclass_fields__))
+        if unknown:
+            raise ValueError(
+                f"query.match_parameters contains unknown parameters: {unknown}"
+            )
+        if match_parameters and self.limit is None:
+            raise ValueError("query.limit is required when match_parameters is set.")
+        object.__setattr__(self, "match_parameters", match_parameters)
+
+        discover_parameters = self.discover_parameters
+        if isinstance(discover_parameters, (str, bytes)):
+            raise ValueError(
+                "query.discover_parameters must be a sequence of parameter names."
+            )
+        try:
+            discover_parameters = tuple(discover_parameters)
+        except TypeError as exc:
+            raise ValueError(
+                "query.discover_parameters must be a sequence of parameter names."
+            ) from exc
+        if any(not isinstance(name, str) or not name for name in discover_parameters):
+            raise ValueError(
+                "query.discover_parameters must contain non-empty strings."
+            )
+        if len(set(discover_parameters)) != len(discover_parameters):
+            raise ValueError("query.discover_parameters must not contain duplicates.")
+        unknown = sorted(
+            set(discover_parameters) - set(ResolvedConfig.__dataclass_fields__)
+        )
+        if unknown:
+            raise ValueError(
+                f"query.discover_parameters contains unknown parameters: {unknown}"
+            )
+        if discover_parameters and set(discover_parameters) != set(match_parameters):
+            raise ValueError(
+                "query.discover_parameters must contain exactly match_parameters."
+            )
+        object.__setattr__(self, "discover_parameters", discover_parameters)
+
+        group_parameters = self.discover_group_parameters
+        if isinstance(group_parameters, (str, bytes)):
+            raise ValueError(
+                "query.discover_group_parameters must be a sequence of parameter names."
+            )
+        try:
+            group_parameters = tuple(group_parameters)
+        except TypeError as exc:
+            raise ValueError(
+                "query.discover_group_parameters must be a sequence of parameter names."
+            ) from exc
+        if any(not isinstance(name, str) or not name for name in group_parameters):
+            raise ValueError(
+                "query.discover_group_parameters must contain non-empty strings."
+            )
+        if len(set(group_parameters)) != len(group_parameters):
+            raise ValueError(
+                "query.discover_group_parameters must not contain duplicates."
+            )
+        if set(group_parameters) - set(discover_parameters):
+            raise ValueError(
+                "query.discover_group_parameters must be a subset of "
+                "query.discover_parameters."
+            )
+        object.__setattr__(self, "discover_group_parameters", group_parameters)
+
+        fallback_where = self.fallback_where
+        if fallback_where is not None:
+            if not isinstance(fallback_where, Mapping) or not fallback_where:
+                raise ValueError("query.fallback_where must be a non-empty mapping or null.")
+            fallback_where = dict(_plain_data(fallback_where))
+            if any(not isinstance(name, str) or not name for name in fallback_where):
+                raise ValueError(
+                    "query.fallback_where filter names must be non-empty strings."
+                )
+            if not match_parameters:
+                raise ValueError(
+                    "query.fallback_where requires query.match_parameters."
+                )
+        object.__setattr__(self, "fallback_where", fallback_where)
 
 
 @dataclass(frozen=True)
@@ -305,13 +560,13 @@ class ConfigDocument:
 
     def batches(self) -> tuple[BatchSpec, ...]:
         cases = self.scalar_cases()
-        groups: dict[tuple[str, bool, bool], list[ResolvedConfig]] = {}
+        groups: dict[tuple[str, bool, ...], list[ResolvedConfig]] = {}
         for case in cases:
             groups.setdefault(_case_compilation_key(case), []).append(case)
 
         # N is the outer loop, followed by schedule and time. This gives stable
         # Slurm array indices for a fixed (N, T) production shard.
-        ordered_keys: list[tuple[str, bool, bool]] = []
+        ordered_keys: list[tuple[str, bool, ...]] = []
         n_order = _sweep_values("N", self.parameters.get("N", 100))
         schedule_order = schedule_options(self.parameters.get("schedule", DEFAULT_SCHEDULE))
         time_order = _sweep_values(
@@ -331,7 +586,7 @@ class ConfigDocument:
                                 ordered_keys.append(key)
 
         batches = []
-        for index, key in enumerate(ordered_keys):
+        for key in ordered_keys:
             persisted_key = key[0]
             if persisted_key not in self.batch_ids:
                 raise ValueError(
@@ -339,17 +594,20 @@ class ConfigDocument:
                 )
             members = groups[key]
             batch_id = int(self.batch_ids[persisted_key])
-            batches.append(
-                BatchSpec(
-                    batch_id=batch_id,
-                    batch_index=index,
-                    seed=(self.config_id + batch_id) % (2**32 - 1),
-                    N=members[0].N,
-                    t_interval=members[0].t_interval,
-                    schedule=members[0].schedule,
-                    cases=tuple(members),
+            shard_size = self.runtime.max_cases_per_batch or len(members)
+            for start in range(0, len(members), shard_size):
+                shard = members[start : start + shard_size]
+                batches.append(
+                    BatchSpec(
+                        batch_id=batch_id,
+                        batch_index=len(batches),
+                        seed=(self.config_id + batch_id) % (2**32 - 1),
+                        N=shard[0].N,
+                        t_interval=shard[0].t_interval,
+                        schedule=shard[0].schedule,
+                        cases=tuple(shard),
+                    )
                 )
-            )
         return tuple(batches)
 
 
@@ -476,13 +734,17 @@ def batch_key(N: int, schedule: Any, t_interval: float = 1.0) -> str:
     )
 
 
-def _case_compilation_key(case: ResolvedConfig) -> tuple[str, bool, bool]:
-    """Separate static sharpness profiles without changing persisted batch IDs."""
+def _case_compilation_key(case: ResolvedConfig) -> tuple[str, bool, ...]:
+    """Separate static compute features without changing persisted batch IDs."""
 
     return (
         batch_key(case.N, case.schedule, case.t_interval),
         case.effective_u_sharp != 0.0,
         case.effective_v_sharp != 0.0,
+        case.J_tol is not None,
+        case.u_tol is not None,
+        case.v_tol is not None,
+        case.projected_gradient_tol is not None,
     )
 
 
@@ -556,13 +818,23 @@ def load_config(path: str | Path) -> ConfigDocument:
     if not isinstance(raw, Mapping):
         raise ValueError(f"{path} must contain a YAML mapping.")
     version = int(raw.get("schema_version", 0))
-    if version != SCHEMA_VERSION:
-        raise ValueError(f"Unsupported schema_version {version}; expected {SCHEMA_VERSION}.")
+    if version not in SUPPORTED_SCHEMA_VERSIONS:
+        raise ValueError(
+            f"Unsupported schema_version {version}; expected one of "
+            f"{sorted(SUPPORTED_SCHEMA_VERSIONS)}."
+        )
     config_id = int(raw["config_id"])
     if not 0 < config_id <= ID_MAX:
         raise ValueError("config_id must be a non-zero signed-64-bit integer.")
     parameters = dict(raw.get("parameters") or {})
-    runtime = RuntimeConfig(**dict(raw.get("runtime") or {}))
+    runtime_values = dict(raw.get("runtime") or {})
+    if version == 2:
+        # Preserve exact rerun behavior for immutable pre-auto-halt configs.
+        parameters.setdefault("u_tol", 1e-3)
+        parameters.setdefault("v_tol", 1e-3)
+        parameters.setdefault("projected_gradient_tol", None)
+        runtime_values.setdefault("auto_halt", False)
+    runtime = RuntimeConfig(**runtime_values)
     query_values = raw.get("query")
     query = (
         None

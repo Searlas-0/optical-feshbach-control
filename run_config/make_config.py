@@ -19,7 +19,7 @@ from typing import Any, Mapping
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from ofc.config import make_document, write_config
+from ofc.config import DEFAULT_RESULTS_DATABASE, make_document, write_config
 
 
 def default_parameters() -> dict[str, Any]:
@@ -47,6 +47,13 @@ def default_parameters() -> dict[str, Any]:
         "lbfgs_history_size": 10,
         "lbfgs_max_linesearch_steps": 20,
         "lbfgs_tolerance": 1e-6,
+        "peak_initial_step_size": 1e-2,
+        "peak_min_step_size": 1e-12,
+        "peak_max_step_size": 0.1,
+        "peak_backtracking_factor": 0.5,
+        "peak_step_growth": 1.5,
+        "peak_armijo": 1e-4,
+        "peak_max_linesearch_steps": 24,
         "smoothness": 1e-2,
         "u_smooth": None,
         "v_smooth": None,
@@ -55,13 +62,15 @@ def default_parameters() -> dict[str, Any]:
         "v_sharp": None,
         "block_size": 500,
         "J_tol": 1e-5,
-        "u_tol": 1e-3,
-        "v_tol": 1e-3,
+        "u_tol": 1e-4,
+        "v_tol": 1e-4,
+        "projected_gradient_tol": 1e-4,
+        "projected_gradient_alpha": 1.0,
     }
 
 
 def default_runtime() -> dict[str, Any]:
-    """Return fresh execution and random-initialization defaults."""
+    """Return execution defaults targeting the one canonical database pair."""
 
     # These match the previous Fourier starts. Set concurrent_workers through
     # a runtime override when a particular allocation requires a different value.
@@ -74,7 +83,15 @@ def default_runtime() -> dict[str, Any]:
         "use_x64": True,
         "device": "auto",
         "concurrent_workers": 4,
-        "database": "results/results.sqlite3",
+        "max_cases_per_batch": None,
+        "max_initialisations_per_batch": None,
+        "max_steps_per_chunk": None,
+        "max_batch_elapsed_seconds": None,
+        "max_elapsed_seconds": None,
+        "distribute_max_elapsed_across_batches": False,
+        "repeat_schedule_until_stable": False,
+        "auto_halt": True,
+        "database": DEFAULT_RESULTS_DATABASE,
     }
 
 

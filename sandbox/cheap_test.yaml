@@ -9,28 +9,50 @@ parameters:
   r_bg: -0.008716
   u_isbound: true
   v_isbound: true
-  u_max: 1000.0
+  u_max:
+    - 40.0
+    - 160.0
+    - 1280.0
   v_max: 1000.0
   slew_limit: 0.05
   schedule:
   - - 1000
     - 1.0
-  - - 10000
+  - - 2000
     - 0.1
-  - - 100000
+  - - 7000
     - 0.1
   optimizer: adam
-  adam_learning_rate: 0.05
-  adam_beta1: 0.9
-  adam_beta2: 0.999
+  adam_learning_rate:
+    - 0.05
+    - 0.1
+    - 0.2
+  adam_beta1:
+    - 0.9
+    - 0.8
+    - 0.7
+  adam_beta2:
+    - 0.999
+    - 0.99
   adam_eps: 1.0e-08
   lbfgs_history_size: 100
   lbfgs_max_linesearch_steps: 200
   lbfgs_tolerance: 1.0e-06
-  smoothness: 0.5e-06
+  smoothness:
+    - 2.0e-06
+    - 1.0e-06
+    - 0.5e-06
+    - 0.25e-06
+    - 0.125e-06
+    - 0.0625e-06
   u_smooth: null
   v_smooth: null
-  sharpness: 5.0e-08
+  sharpness:
+    - 10.0e-08
+    - 5.0e-08
+    - 2.5e-08
+    - 1.25e-08
+    - 0.625e-08
   u_sharp: null
   v_sharp: null
   block_size: 500

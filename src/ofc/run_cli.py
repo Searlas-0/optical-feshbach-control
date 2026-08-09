@@ -46,6 +46,11 @@ def build_parser():
         type=int,
         help="Use an explicit shared queue ID (for example a Slurm array job ID).",
     )
+    parser.add_argument(
+        "--continue-on-error",
+        action="store_true",
+        help="Record a failed config and continue with the remaining queued configs.",
+    )
     return parser
 
 
@@ -55,6 +60,7 @@ def main(argv=None):
         [resolve_config(value) for value in arguments.configs],
         batch_indices=arguments.batch_index,
         queue_id=arguments.queue_id,
+        continue_on_error=arguments.continue_on_error,
     )
     print(json.dumps(summary, indent=2))
     return 0

@@ -1,0 +1,124 @@
+schema_version: 3
+config_id: 5592407090819706366
+name: N100_u1280_smoothness_sharpness_peak_refinement_gpu
+description: N=100 u_max=1280 monotone peak refinement of the best result at every
+  exploratory parameter pair.
+created_utc: '2026-08-09T16:59:57.616427+00:00'
+parameters:
+  N: 100
+  t_interval: 4
+  r_bg: -0.008716
+  u_isbound: true
+  v_isbound: true
+  u_max: 1280
+  v_max: 1000
+  slew_limit: 0.05
+  optimizer: peak_refinement
+  schedule:
+  - - 250
+    - 1
+  adam_learning_rate: 0.1
+  adam_beta1: 0.7
+  adam_beta2: 0.99
+  adam_eps: 1.0e-08
+  lbfgs_history_size: 10
+  lbfgs_max_linesearch_steps: 20
+  lbfgs_tolerance: 1.0e-06
+  peak_initial_step_size: 0.01
+  peak_min_step_size: 1.0e-12
+  peak_max_step_size: 0.1
+  peak_backtracking_factor: 0.5
+  peak_step_growth: 1.5
+  peak_armijo: 0.0001
+  peak_max_linesearch_steps: 24
+  smoothness:
+  - 7.905694150420948e-09
+  - 1.2948686698078024e-08
+  - 2.1208572456101802e-08
+  - 3.473738735932843e-08
+  - 5.68961481518697e-08
+  - 9.318984300787349e-08
+  - 1.5263505741463315e-07
+  - 2.5e-07
+  - 4.094734267385159e-07
+  - 6.706739488199311e-07
+  - 1.0984926401901976e-06
+  - 1.7992141825028801e-06
+  - 2.9469215869839663e-06
+  - 4.826744322208124e-06
+  - 7.905694150420947e-06
+  u_smooth: null
+  v_smooth: null
+  sharpness:
+  - 7.905694150420948e-10
+  - 1.2948686698078025e-09
+  - 2.1208572456101802e-09
+  - 3.4737387359328433e-09
+  - 5.68961481518697e-09
+  - 9.318984300787349e-09
+  - 1.5263505741463315e-08
+  - 2.5e-08
+  - 4.0947342673851594e-08
+  - 6.706739488199311e-08
+  - 1.0984926401901975e-07
+  - 1.79921418250288e-07
+  - 2.946921586983966e-07
+  - 4.826744322208123e-07
+  - 7.905694150420948e-07
+  u_sharp: null
+  v_sharp: null
+  block_size: 25
+  J_tol: 0.001
+  u_tol: 0.001
+  v_tol: 0.001
+  projected_gradient_tol: 0.01
+  projected_gradient_alpha: 1
+runtime:
+  initialisations: 0
+  fourier_num_modes: 5
+  fourier_rms_amplitude: 0.3
+  fourier_intensity_fraction: 0.3
+  use_jit: true
+  use_x64: true
+  device: gpu
+  concurrent_workers: 1
+  max_cases_per_batch: 20
+  max_initialisations_per_batch: null
+  max_steps_per_chunk: 25
+  max_batch_elapsed_seconds: null
+  max_elapsed_seconds: 14400.0
+  distribute_max_elapsed_across_batches: true
+  repeat_schedule_until_stable: true
+  auto_halt: true
+  database: results/results.sqlite3
+query:
+  where:
+    status: complete
+    config_name: N100_u1280_smoothness_sharpness_exploratory_adam_gpu
+    N: 100
+    u_max: 1280
+  limit: 1
+  order_by: best_score
+  descending: true
+  control_kind: best
+  resume_optimizer: false
+  perturbed: false
+  perturbation_levels:
+  - 0.0005
+  - 0.001
+  - 0.0025
+  - 0.005
+  - 0.01
+  match_parameters:
+  - smoothness
+  - sharpness
+  discover_parameters: []
+  discover_group_parameters: []
+  fallback_where:
+    status: complete
+    N: 100
+    u_max: 1280
+    smoothness: 2.5e-07
+    sharpness: 2.5e-08
+batch_ids:
+  '{"N":100,"schedule":[[250,1.0]],"t_interval":4.0}': 739613781309124039

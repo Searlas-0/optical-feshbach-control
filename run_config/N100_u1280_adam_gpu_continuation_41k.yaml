@@ -1,0 +1,81 @@
+schema_version: 2
+config_id: 6296208626144195425
+name: N100_u1280_adam_gpu_continuation_41k
+description: N=100 u_max=1280 GPU Adam continuation from best run 81268 with fixed
+  source regularization and 41k steps.
+created_utc: '2026-08-09T10:17:55.921082+00:00'
+parameters:
+  N: 100
+  t_interval: 4.0
+  r_bg: -0.008716
+  u_isbound: true
+  v_isbound: true
+  u_max: 1280.0
+  v_max: 1000.0
+  slew_limit: 0.05
+  optimizer: adam
+  schedule:
+  - - 1000
+    - 1.0
+  - - 5000
+    - 0.1
+  - - 5000
+    - 0.1
+  - - 30000
+    - 0.1
+  adam_learning_rate:
+  - 0.02
+  - 0.05
+  - 0.1
+  adam_beta1:
+  - 0.8
+  - 0.9
+  - 0.95
+  adam_beta2:
+  - 0.99
+  - 0.999
+  adam_eps: 1.0e-08
+  smoothness: 2.5e-07
+  u_smooth: null
+  v_smooth: null
+  sharpness: 2.5e-08
+  u_sharp: null
+  v_sharp: null
+  block_size: 500
+  J_tol: 1.0e-05
+  u_tol: 0.001
+  v_tol: 0.001
+runtime:
+  initialisations: 10
+  fourier_num_modes: 5
+  fourier_rms_amplitude: 0.3
+  fourier_intensity_fraction: 0.3
+  use_jit: true
+  use_x64: true
+  device: gpu
+  concurrent_workers: 1
+  max_cases_per_batch: 18
+  database: results/results.sqlite3
+query:
+  where:
+    run_id: 81268
+    queue_id: 702019
+    status: complete
+    N: 100
+    u_max: 1280.0
+  limit: 1
+  order_by: best_score
+  descending: true
+  control_kind: best
+  resume_optimizer: false
+  perturbed: true
+  perturbation_levels:
+  - 0.0025
+  - 0.005
+  - 0.01
+  - 0.025
+  - 0.05
+  match_parameters: []
+  fallback_where: null
+batch_ids:
+  '{"N":100,"schedule":[[1000,1.0],[5000,0.1],[5000,0.1],[30000,0.1]],"t_interval":4.0}': 8920913873149488381

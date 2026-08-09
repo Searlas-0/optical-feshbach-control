@@ -4,12 +4,15 @@ from pathlib import Path
 
 import numpy as np
 import pytest
+import yaml
 
 from ofc.config import (
+    DEFAULT_QUERY_PERTURBATION_LEVELS,
     InitializationQuery,
     ResolvedConfig,
     RuntimeConfig,
     batch_key,
+    document_to_dict,
     load_config,
     make_document,
     write_config,
@@ -81,6 +84,9 @@ def test_initialization_query_validation_and_defaults():
     assert query.order_by == "best_score"
     assert query.descending is True
     assert query.control_kind == "best"
+    assert query.resume_optimizer is False
+    assert query.perturbed is True
+    assert query.perturbation_levels == DEFAULT_QUERY_PERTURBATION_LEVELS
 
     with pytest.raises(ValueError, match="non-empty mapping"):
         InitializationQuery(where={})
@@ -88,6 +94,27 @@ def test_initialization_query_validation_and_defaults():
         InitializationQuery(where={"run_id": 1}, limit=0)
     with pytest.raises(ValueError, match="initial, best, or final"):
         InitializationQuery(where={"run_id": 1}, control_kind="optimal")
+    with pytest.raises(ValueError, match="perturbed must be a boolean"):
+        InitializationQuery(where={"run_id": 1}, perturbed=1)
+    with pytest.raises(ValueError, match="resume_optimizer must be a boolean"):
+        InitializationQuery(where={"run_id": 1}, resume_optimizer=1)
+    with pytest.raises(ValueError, match="requires best or final"):
+        InitializationQuery(
+            where={"run_id": 1},
+            control_kind="initial",
+            perturbed=False,
+            resume_optimizer=True,
+        )
+    with pytest.raises(ValueError, match="requires perturbed: false"):
+        InitializationQuery(where={"run_id": 1}, resume_optimizer=True)
+    with pytest.raises(ValueError, match="non-empty sequence"):
+        InitializationQuery(where={"run_id": 1}, perturbation_levels=[])
+    with pytest.raises(ValueError, match=r"in \(0, 1\]"):
+        InitializationQuery(where={"run_id": 1}, perturbation_levels=[0.0])
+    with pytest.raises(ValueError, match="duplicates"):
+        InitializationQuery(
+            where={"run_id": 1}, perturbation_levels=[0.01, 0.01]
+        )
 
 
 def test_config_maker_uses_fresh_defaults_when_called_without_overrides(tmp_path):
@@ -143,6 +170,53 @@ def test_compile_shape_fields_cannot_be_swept():
         make_document(name="bad", parameters={"block_size": [10, 20]})
 
 
+def test_stability_defaults_optional_validation_and_static_batch_grouping():
+    case = ResolvedConfig()
+    assert case.u_tol == 1e-4
+    assert case.v_tol == 1e-4
+    assert case.projected_gradient_tol == 1e-4
+    assert case.projected_gradient_alpha == 1.0
+    assert RuntimeConfig().auto_halt is True
+
+    disabled = ResolvedConfig(
+        J_tol=None,
+        u_tol=None,
+        v_tol=None,
+        projected_gradient_tol=None,
+    )
+    assert disabled.J_tol is None
+    with pytest.raises(ValueError, match="positive or null"):
+        ResolvedConfig(projected_gradient_tol=0.0)
+    with pytest.raises(ValueError, match="auto_halt must be a boolean"):
+        RuntimeConfig(auto_halt=1)
+
+    document = make_document(
+        name="optional_stability",
+        parameters={"N": 4, "J_tol": [None, 1e-4]},
+    )
+    assert len(document.batches()) == 2
+
+
+def test_schema_v2_configs_keep_pre_auto_halt_behavior(tmp_path):
+    original = make_document(name="legacy", parameters={"N": 4})
+    data = document_to_dict(original)
+    data["schema_version"] = 2
+    data["parameters"].pop("projected_gradient_tol", None)
+    data["parameters"].pop("projected_gradient_alpha", None)
+    data["runtime"].pop("auto_halt", None)
+    path = tmp_path / "legacy.yaml"
+    path.write_text(yaml.safe_dump(data, sort_keys=False), encoding="utf-8")
+
+    restored = load_config(path)
+
+    assert restored.schema_version == 2
+    assert restored.runtime.auto_halt is False
+    case = restored.scalar_cases()[0]
+    assert case.u_tol == 1e-3
+    assert case.v_tol == 1e-3
+    assert case.projected_gradient_tol is None
+
+
 def test_time_sweep_creates_stable_independent_batches_for_slurm_arrays():
     document = make_document(
         name="time_shards",
@@ -160,6 +234,87 @@ def test_time_sweep_creates_stable_independent_batches_for_slurm_arrays():
         (4, 200, 1.0),
         (5, 200, 10.0),
     ]
+
+
+def test_runtime_case_limit_shards_one_compilation_batch_without_changing_seed():
+    document = make_document(
+        name="small_jobs",
+        parameters={"N": 4, "u_max": list(range(1, 24))},
+        runtime={"max_cases_per_batch": 10},
+    )
+
+    batches = document.batches()
+    assert [len(batch.cases) for batch in batches] == [10, 10, 3]
+    assert [batch.batch_index for batch in batches] == [0, 1, 2]
+    assert len({batch.batch_id for batch in batches}) == 1
+    assert len({batch.seed for batch in batches}) == 1
+
+
+def test_runtime_initialization_limit_is_validated_and_serialized():
+    runtime = RuntimeConfig(max_initialisations_per_batch=25)
+    assert runtime.max_initialisations_per_batch == 25
+    with pytest.raises(ValueError, match="max_initialisations_per_batch"):
+        RuntimeConfig(max_initialisations_per_batch=0)
+    with pytest.raises(ValueError, match="max_initialisations_per_batch"):
+        RuntimeConfig(max_initialisations_per_batch=True)
+
+
+def test_runtime_elapsed_limits_and_equal_batch_distribution_are_validated():
+    runtime = RuntimeConfig(
+        concurrent_workers=1,
+        max_batch_elapsed_seconds=18_000,
+        max_elapsed_seconds=43_200,
+        distribute_max_elapsed_across_batches=True,
+    )
+    assert runtime.max_batch_elapsed_seconds == 18_000.0
+    assert runtime.max_elapsed_seconds == 43_200.0
+    assert runtime.distribute_max_elapsed_across_batches is True
+    with pytest.raises(ValueError, match="max_batch_elapsed_seconds"):
+        RuntimeConfig(max_batch_elapsed_seconds=0)
+    with pytest.raises(ValueError, match="requires max_elapsed_seconds"):
+        RuntimeConfig(distribute_max_elapsed_across_batches=True)
+
+
+def test_discovered_query_group_parameters_must_be_discovered_parameters():
+    query = InitializationQuery(
+        where={"N": 100},
+        limit=5,
+        match_parameters=("u_max", "smoothness"),
+        discover_parameters=("u_max", "smoothness"),
+        discover_group_parameters=("u_max",),
+    )
+    assert query.discover_group_parameters == ("u_max",)
+    with pytest.raises(ValueError, match="must be a subset"):
+        InitializationQuery(
+            where={"N": 100},
+            limit=5,
+            match_parameters=("u_max",),
+            discover_parameters=("u_max",),
+            discover_group_parameters=("smoothness",),
+        )
+
+
+def test_case_matched_query_requires_limit_and_valid_fallback():
+    with pytest.raises(ValueError, match="limit is required"):
+        InitializationQuery(
+            where={"queue_id": 1},
+            match_parameters=("adam_learning_rate",),
+        )
+    with pytest.raises(ValueError, match="requires query.match_parameters"):
+        InitializationQuery(
+            where={"queue_id": 1},
+            fallback_where={"queue_id": 2},
+        )
+
+    query = InitializationQuery(
+        where={"queue_id": 1},
+        limit=1,
+        perturbed=False,
+        match_parameters=("adam_learning_rate", "smoothness"),
+        fallback_where={"queue_id": 2, "status": "complete"},
+    )
+    assert query.match_parameters == ("adam_learning_rate", "smoothness")
+    assert query.fallback_where == {"queue_id": 2, "status": "complete"}
 
 
 def test_r_bg_defaults_to_one_and_sweeps_signed_nonzero_values():
@@ -199,6 +354,14 @@ def test_optimizer_settings_are_separate_and_sharpness_overrides_are_resolved():
         sharpness=0.25,
         v_sharp=0.75,
     )
+    peak = ResolvedConfig(
+        optimizer="peak_refinement",
+        schedule=((25, 1.0),),
+        peak_initial_step_size=2e-2,
+        peak_min_step_size=1e-10,
+        peak_max_step_size=0.2,
+        peak_max_linesearch_steps=16,
+    )
 
     assert adam.optimizer == "adam"
     assert adam.adam_learning_rate == 2e-3
@@ -211,6 +374,23 @@ def test_optimizer_settings_are_separate_and_sharpness_overrides_are_resolved():
     assert lbfgs.lbfgs_tolerance == 2e-7
     assert lbfgs.effective_u_sharp == 0.25
     assert lbfgs.effective_v_sharp == 0.75
+    assert peak.optimizer == "peak_refinement"
+    assert peak.peak_initial_step_size == 2e-2
+    assert peak.peak_max_linesearch_steps == 16
+
+
+def test_peak_refinement_parameter_bounds_are_validated():
+    with pytest.raises(ValueError, match="must not exceed peak_initial"):
+        ResolvedConfig(
+            optimizer="peak_refinement",
+            peak_min_step_size=0.1,
+            peak_initial_step_size=0.01,
+        )
+    with pytest.raises(ValueError, match="Non-Adam schedule multipliers"):
+        ResolvedConfig(
+            optimizer="peak_refinement",
+            schedule=((10, 0.5),),
+        )
 
 
 def test_zero_and_nonzero_sharpness_compile_as_separate_batches():

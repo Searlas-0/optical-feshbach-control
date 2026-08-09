@@ -13,6 +13,7 @@ load configs, perform calculations, invoke the runner, or plot.
 from __future__ import annotations
 
 from contextlib import contextmanager
+from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from io import BytesIO
 import json
@@ -24,7 +25,7 @@ import zlib
 import numpy as np
 
 
-PHYSICAL_DATABASE_VERSION = 1
+PHYSICAL_DATABASE_VERSION = 2
 PARAMETER_DATABASE_VERSION = 1
 SQLITE_TIMEOUT_SECONDS = 3600.0
 
@@ -57,8 +58,27 @@ CREATE TABLE IF NOT EXISTS metadata (
     value TEXT NOT NULL
 );
 CREATE TABLE IF NOT EXISTS runs (
-    run_id INTEGER PRIMARY KEY
+    run_id INTEGER PRIMARY KEY,
+    config_id INTEGER,
+    config_document_id INTEGER,
+    batch_id INTEGER,
+    execution_id INTEGER,
+    queue_id INTEGER,
+    batch_index INTEGER,
+    status TEXT,
+    started_utc TEXT,
+    completed_utc TEXT
 );
+CREATE INDEX IF NOT EXISTS idx_runs_config
+    ON runs(config_id, config_document_id, run_id);
+CREATE INDEX IF NOT EXISTS idx_runs_batch
+    ON runs(batch_id, execution_id, run_id);
+CREATE INDEX IF NOT EXISTS idx_runs_queue
+    ON runs(queue_id, config_document_id, run_id);
+CREATE INDEX IF NOT EXISTS idx_runs_started
+    ON runs(started_utc, run_id);
+CREATE INDEX IF NOT EXISTS idx_runs_status
+    ON runs(status, run_id);
 
 CREATE TABLE IF NOT EXISTS physical_values (
     run_id INTEGER NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
@@ -79,6 +99,21 @@ CREATE TABLE IF NOT EXISTS control_arrays (
     name TEXT NOT NULL,
     values_blob BLOB NOT NULL,
     PRIMARY KEY(run_id, kind, name)
+);
+CREATE TABLE IF NOT EXISTS optimizer_state_arrays (
+    run_id INTEGER NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    moment TEXT NOT NULL,
+    name TEXT NOT NULL,
+    values_blob BLOB NOT NULL,
+    PRIMARY KEY(run_id, kind, moment, name)
+);
+CREATE TABLE IF NOT EXISTS optimizer_states (
+    run_id INTEGER NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
+    kind TEXT NOT NULL,
+    optimizer TEXT NOT NULL,
+    count INTEGER NOT NULL,
+    PRIMARY KEY(run_id, kind)
 );
 CREATE TABLE IF NOT EXISTS history_arrays (
     run_id INTEGER NOT NULL REFERENCES runs(run_id) ON DELETE CASCADE,
@@ -200,17 +235,58 @@ class ResultStore:
         return self._connect(self.parameter_path)
 
     @staticmethod
-    def _initialise_database(connection, schema: str, *, version: int, role: str):
+    def _migrate_physical_database(connection, current_version: int) -> None:
+        """Add the durable run index introduced in physical schema version 2."""
+
+        if current_version != 1:
+            raise RuntimeError(
+                f"physical_results database version {current_version} cannot be "
+                f"migrated to version {PHYSICAL_DATABASE_VERSION}."
+            )
+        existing = {
+            str(row[1]) for row in connection.execute("PRAGMA table_info(runs)")
+        }
+        columns = {
+            "config_id": "INTEGER",
+            "config_document_id": "INTEGER",
+            "batch_id": "INTEGER",
+            "execution_id": "INTEGER",
+            "queue_id": "INTEGER",
+            "batch_index": "INTEGER",
+            "status": "TEXT",
+            "started_utc": "TEXT",
+            "completed_utc": "TEXT",
+        }
+        for name, data_type in columns.items():
+            if name not in existing:
+                connection.execute(f"ALTER TABLE runs ADD COLUMN {name} {data_type}")
+
+    @staticmethod
+    def _initialise_database(
+        connection,
+        schema: str,
+        *,
+        version: int,
+        role: str,
+        migrate=None,
+    ):
         connection.execute("PRAGMA journal_mode = WAL")
         connection.execute("PRAGMA synchronous = NORMAL")
-        connection.executescript(schema)
+        connection.execute(
+            "CREATE TABLE IF NOT EXISTS metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)"
+        )
         current = connection.execute(
             "SELECT value FROM metadata WHERE key='database_version'"
         ).fetchone()
-        if current is not None and int(current[0]) != version:
-            raise RuntimeError(
-                f"{role} database version {current[0]} is not supported by version {version}."
-            )
+        current_version = None if current is None else int(current[0])
+        if current_version is not None and current_version != version:
+            if migrate is None:
+                raise RuntimeError(
+                    f"{role} database version {current_version} is not supported by "
+                    f"version {version}."
+                )
+            migrate(connection, current_version)
+        connection.executescript(schema)
         connection.execute(
             "INSERT OR REPLACE INTO metadata(key, value) VALUES('database_version', ?)",
             (str(version),),
@@ -227,6 +303,7 @@ class ResultStore:
                 PHYSICAL_SCHEMA,
                 version=PHYSICAL_DATABASE_VERSION,
                 role="physical_results",
+                migrate=self._migrate_physical_database,
             )
         with self.connect_parameters() as connection:
             self._initialise_database(
@@ -234,6 +311,75 @@ class ResultStore:
                 PARAMETER_SCHEMA,
                 version=PARAMETER_DATABASE_VERSION,
                 role="run_parameters",
+            )
+        self._backfill_physical_run_index()
+
+    def _backfill_physical_run_index(self) -> None:
+        """Populate the stable physical index from the flexible methodology store."""
+
+        with self.connect() as connection:
+            missing = [
+                int(row[0])
+                for row in connection.execute(
+                    """SELECT run_id FROM runs
+                       WHERE config_id IS NULL OR config_document_id IS NULL
+                          OR batch_id IS NULL OR execution_id IS NULL
+                          OR queue_id IS NULL OR batch_index IS NULL
+                          OR status IS NULL OR started_utc IS NULL
+                       ORDER BY run_id"""
+                )
+            ]
+        if not missing:
+            return
+        records = []
+        with self.connect_parameters() as connection:
+            for start in range(0, len(missing), 900):
+                chunk = missing[start : start + 900]
+                placeholders = ",".join("?" for _ in chunk)
+                records.extend(
+                    connection.execute(
+                        f"""SELECT rp.run_id, c.config_id, rp.config_document_id,
+                                   e.batch_id, rp.execution_id, e.queue_id,
+                                   e.batch_index, rp.status, rp.started_utc,
+                                   rp.completed_utc
+                            FROM run_parameters rp
+                            JOIN execution_batches e
+                              ON e.execution_id=rp.execution_id
+                            JOIN config_documents c
+                              ON c.config_document_id=rp.config_document_id
+                            WHERE rp.run_id IN ({placeholders})
+                            ORDER BY rp.run_id""",
+                        chunk,
+                    ).fetchall()
+                )
+        found = {int(row["run_id"]) for row in records}
+        unresolved = sorted(set(missing) - found)
+        if unresolved:
+            raise RuntimeError(
+                "Physical runs have no matching methodology records: "
+                f"{unresolved[:10]}{'...' if len(unresolved) > 10 else ''}"
+            )
+        with self.transaction() as connection:
+            connection.executemany(
+                """UPDATE runs SET
+                       config_id=?, config_document_id=?, batch_id=?, execution_id=?,
+                       queue_id=?, batch_index=?, status=?, started_utc=?, completed_utc=?
+                   WHERE run_id=?""",
+                [
+                    (
+                        row["config_id"],
+                        row["config_document_id"],
+                        row["batch_id"],
+                        row["execution_id"],
+                        row["queue_id"],
+                        row["batch_index"],
+                        row["status"],
+                        row["started_utc"],
+                        row["completed_utc"],
+                        row["run_id"],
+                    )
+                    for row in records
+                ],
             )
 
     @contextmanager
@@ -309,18 +455,51 @@ class ResultStore:
         *,
         config_document_id: int,
         initialization_metadata: list[dict] | None = None,
+        initialization_index_offset: int = 0,
+        initialization_count_total: int | None = None,
     ):
         """Allocate fresh run IDs and store exact settings before computation."""
 
+        if initialization_count_total is None:
+            initialization_count_total = initialisations
+        if not 0 <= initialization_index_offset:
+            raise ValueError("initialization_index_offset must be non-negative.")
+        if initialization_count_total < initialization_index_offset + initialisations:
+            raise ValueError(
+                "initialization_count_total cannot be smaller than this shard."
+            )
         mapping = {}
         run_records = []
         if initialization_metadata is None:
-            initialization_metadata = [{} for _ in range(initialisations)]
-        if len(initialization_metadata) != initialisations:
+            case_initialization_metadata = [
+                [{} for _ in range(initialisations)] for _ in cases
+            ]
+        elif (
+            len(initialization_metadata) == initialisations
+            and all(isinstance(item, Mapping) for item in initialization_metadata)
+        ):
+            shared = [dict(item) for item in initialization_metadata]
+            case_initialization_metadata = [shared for _ in cases]
+        elif (
+            len(initialization_metadata) == len(cases)
+            and all(
+                isinstance(items, Sequence)
+                and not isinstance(items, (str, bytes))
+                and len(items) == initialisations
+                and all(isinstance(item, Mapping) for item in items)
+                for items in initialization_metadata
+            )
+        ):
+            case_initialization_metadata = [
+                [dict(item) for item in items] for items in initialization_metadata
+            ]
+        else:
             raise ValueError(
-                "initialization_metadata must contain one record per initialization."
+                "initialization_metadata must contain one shared record per "
+                "initialization or one such record list per case."
             )
         execution_payload = json.dumps(record, sort_keys=True, separators=(",", ":"))
+        execution_started_utc = utc_now()
         with self.transaction(parameters=True) as connection:
             cursor = connection.execute(
                 """INSERT INTO execution_batches(
@@ -333,12 +512,15 @@ class ResultStore:
                     record["queue_id"],
                     record["batch_index"],
                     execution_payload,
-                    utc_now(),
+                    execution_started_utc,
                 ),
             )
             execution_id = int(cursor.lastrowid)
             for case_index, parameters in enumerate(cases):
                 for initialization_index in range(initialisations):
+                    global_initialization_index = (
+                        initialization_index_offset + initialization_index
+                    )
                     resolved = {
                         **parameters,
                         "config_id": record["config_id"],
@@ -353,11 +535,11 @@ class ResultStore:
                         "batch_index": record["batch_index"],
                         "batch_key": record["batch_key"],
                         "case_index": case_index,
-                        "initialization_index": initialization_index,
-                        "initialisation_index": initialization_index,
+                        "initialization_index": global_initialization_index,
+                        "initialisation_index": global_initialization_index,
                         "seed": record["seed"],
-                        "initialization_count_total": initialisations,
-                        **initialization_metadata[initialization_index],
+                        "initialization_count_total": initialization_count_total,
+                        **case_initialization_metadata[case_index][initialization_index],
                     }
                     cursor = connection.execute(
                         """INSERT INTO run_parameters(
@@ -367,7 +549,7 @@ class ResultStore:
                         (
                             execution_id,
                             config_document_id,
-                            utc_now(),
+                            execution_started_utc,
                             json.dumps(resolved, sort_keys=True, separators=(",", ":")),
                         ),
                     )
@@ -381,7 +563,23 @@ class ResultStore:
         try:
             with self.transaction() as connection:
                 for run_id, parameters in run_records:
-                    connection.execute("INSERT INTO runs(run_id) VALUES(?)", (run_id,))
+                    connection.execute(
+                        """INSERT INTO runs(
+                               run_id, config_id, config_document_id, batch_id,
+                               execution_id, queue_id, batch_index, status,
+                               started_utc, completed_utc
+                           ) VALUES(?, ?, ?, ?, ?, ?, ?, 'running', ?, NULL)""",
+                        (
+                            run_id,
+                            record["config_id"],
+                            config_document_id,
+                            record["batch_id"],
+                            execution_id,
+                            record["queue_id"],
+                            record["batch_index"],
+                            execution_started_utc,
+                        ),
+                    )
                     self._write_values(
                         connection,
                         "physical_values",
@@ -423,11 +621,37 @@ class ResultStore:
             }
             control_blobs = {
                 (kind, name): encode_array(values)
-                for kind in ("initial", "best", "final")
+                for kind in (
+                    "initial",
+                    "best",
+                    "final",
+                    "initial_raw",
+                    "best_raw",
+                    "final_raw",
+                )
                 if kind in member
                 for name, values in member[kind].items()
             }
-            encoded_members.append((member, history_blobs, control_blobs))
+            optimizer_state_blobs = {
+                (kind, moment, name): encode_array(values)
+                for kind, state in member.get("adam_states", {}).items()
+                for moment, controls in state.items()
+                if moment != "count"
+                for name, values in controls.items()
+            }
+            optimizer_state_counts = {
+                kind: int(state["count"])
+                for kind, state in member.get("adam_states", {}).items()
+            }
+            encoded_members.append(
+                (
+                    member,
+                    history_blobs,
+                    control_blobs,
+                    optimizer_state_blobs,
+                    optimizer_state_counts,
+                )
+            )
 
         with self.transaction(parameters=True) as connection:
             for member in members:
@@ -451,7 +675,13 @@ class ResultStore:
                 )
 
         with self.transaction() as connection:
-            for member, history_blobs, control_blobs in encoded_members:
+            for (
+                member,
+                history_blobs,
+                control_blobs,
+                optimizer_state_blobs,
+                optimizer_state_counts,
+            ) in encoded_members:
                 run_id = member["run_id"]
                 self._write_values(
                     connection,
@@ -466,7 +696,13 @@ class ResultStore:
                         "final_score": member["final_score"],
                         "final_objective": member["final_objective"],
                         "final_penalty": member["final_penalty"],
+                        **(
+                            {"termination_reason": member["termination_reason"]}
+                            if "termination_reason" in member
+                            else {}
+                        ),
                         **member.get("best_derivatives", {}),
+                        **member.get("best_diagnostics", {}),
                     },
                 )
                 for name, blob in history_blobs.items():
@@ -483,6 +719,20 @@ class ResultStore:
                                run_id, kind, name, values_blob
                            ) VALUES(?, ?, ?, ?)""",
                         (run_id, kind, name, blob),
+                    )
+                for (kind, moment, name), blob in optimizer_state_blobs.items():
+                    connection.execute(
+                        """INSERT OR REPLACE INTO optimizer_state_arrays(
+                               run_id, kind, moment, name, values_blob
+                           ) VALUES(?, ?, ?, ?, ?)""",
+                        (run_id, kind, moment, name, blob),
+                    )
+                for kind, count in optimizer_state_counts.items():
+                    connection.execute(
+                        """INSERT OR REPLACE INTO optimizer_states(
+                               run_id, kind, optimizer, count
+                           ) VALUES(?, ?, 'adam', ?)""",
+                        (run_id, kind, count),
                     )
             for tolerance in tolerances:
                 values = {
@@ -503,12 +753,13 @@ class ResultStore:
 
     def complete_batch(self, execution_id: int, run_ids) -> None:
         completed = utc_now()
+        run_ids = [int(run_id) for run_id in run_ids]
         with self.transaction(parameters=True) as connection:
             connection.executemany(
                 """UPDATE run_parameters
                    SET status='complete', completed_utc=?, error=NULL
                    WHERE run_id=?""",
-                [(completed, int(run_id)) for run_id in run_ids],
+                [(completed, run_id) for run_id in run_ids],
             )
             connection.execute(
                 """UPDATE execution_batches
@@ -516,16 +767,34 @@ class ResultStore:
                    WHERE execution_id=?""",
                 (completed, execution_id),
             )
+        with self.transaction() as connection:
+            connection.executemany(
+                """UPDATE runs
+                   SET status='complete', completed_utc=?
+                   WHERE run_id=?""",
+                [(completed, run_id) for run_id in run_ids],
+            )
 
     def fail_batch(self, execution_id: int, run_ids, error: str) -> None:
+        completed = utc_now()
+        run_ids = [int(run_id) for run_id in run_ids]
         with self.transaction(parameters=True) as connection:
             connection.executemany(
-                """UPDATE run_parameters SET status='failed', error=?
+                """UPDATE run_parameters
+                   SET status='failed', error=?, completed_utc=?
                    WHERE run_id=?""",
-                [(str(error), int(run_id)) for run_id in run_ids],
+                [(str(error), completed, run_id) for run_id in run_ids],
             )
             connection.execute(
-                """UPDATE execution_batches SET status='failed', error=?
+                """UPDATE execution_batches
+                   SET status='failed', error=?, completed_utc=?
                    WHERE execution_id=?""",
-                (str(error), execution_id),
+                (str(error), completed, execution_id),
+            )
+        with self.transaction() as connection:
+            connection.executemany(
+                """UPDATE runs
+                   SET status='failed', completed_utc=?
+                   WHERE run_id=?""",
+                [(completed, run_id) for run_id in run_ids],
             )

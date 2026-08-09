@@ -9,10 +9,11 @@ independent and exchange only explicit arguments/return values.
 from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor, as_completed
-from dataclasses import asdict
+from dataclasses import asdict, replace
 import gc
 import os
 from pathlib import Path
+import time
 from typing import Iterable
 
 from .device import configure_jax_environment, effective_device
@@ -23,7 +24,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 
-from .analysis import ToleranceTracker, best_control_derivatives
+from .analysis import best_control_derivatives
 from .config import (
     BatchSpec,
     ConfigDocument,
@@ -33,10 +34,19 @@ from .config import (
 )
 from .filtering import parse_value
 from .initialization import random_fourier_controls, stored_controls_to_raw
-from .optimization import BatchedAdamOptimizer, BatchedLBFGSOptimizer
+from .optimization import (
+    BatchedAdamOptimizer,
+    BatchedLBFGSOptimizer,
+    BatchedPeakRefinementOptimizer,
+)
 from .physics import Physics
 from .results import Results
 from .storage import ResultStore
+
+
+QUERY_PERTURBATION_SEED_MULTIPLIER = 0x9E3779B1
+QUERY_PERTURBATION_INDEX_MULTIPLIER = 0x85EBCA6B
+WALLTIME_CHECK_MAX_STEPS = 10_000
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -81,7 +91,7 @@ def _device(name: str):
 
 
 def _member_parameters(batch: BatchSpec, initialisations: int, dtype):
-    fields = (
+    fields = [
         "r_bg",
         "u_max",
         "v_max",
@@ -96,7 +106,23 @@ def _member_parameters(batch: BatchSpec, initialisations: int, dtype):
         "adam_eps",
         "adam_learning_rate",
         "lbfgs_tolerance",
+        "peak_initial_step_size",
+        "peak_min_step_size",
+        "peak_max_step_size",
+        "peak_backtracking_factor",
+        "peak_step_growth",
+        "peak_armijo",
+    ]
+    first_case = batch.cases[0]
+    optional_tolerances = (
+        ("J_tol", first_case.J_tol),
+        ("u_tol", first_case.u_tol),
+        ("v_tol", first_case.v_tol),
+        ("projected_gradient_tol", first_case.projected_gradient_tol),
     )
+    fields.extend(name for name, value in optional_tolerances if value is not None)
+    if first_case.projected_gradient_tol is not None:
+        fields.append("projected_gradient_alpha")
     values = {name: [] for name in fields}
     for case in batch.cases:
         resolved = {
@@ -114,7 +140,22 @@ def _member_parameters(batch: BatchSpec, initialisations: int, dtype):
             "adam_eps": case.adam_eps,
             "adam_learning_rate": case.adam_learning_rate,
             "lbfgs_tolerance": case.lbfgs_tolerance,
+            "peak_initial_step_size": case.peak_initial_step_size,
+            "peak_min_step_size": case.peak_min_step_size,
+            "peak_max_step_size": case.peak_max_step_size,
+            "peak_backtracking_factor": case.peak_backtracking_factor,
+            "peak_step_growth": case.peak_step_growth,
+            "peak_armijo": case.peak_armijo,
         }
+        resolved.update(
+            {
+                name: getattr(case, name)
+                for name, enabled_value in optional_tolerances
+                if enabled_value is not None
+            }
+        )
+        if first_case.projected_gradient_tol is not None:
+            resolved["projected_gradient_alpha"] = case.projected_gradient_alpha
         for name in fields:
             values[name].extend([resolved[name]] * initialisations)
     return {name: jnp.asarray(value, dtype=dtype) for name, value in values.items()}
@@ -131,6 +172,31 @@ def _flat_member(flat_index: int, initialisations: int):
     return divmod(flat_index, initialisations)
 
 
+def _slice_member_tree(tree, keep_indices, member_count: int):
+    """Keep selected leading member axes while preserving scalar loop state."""
+
+    def select(values):
+        if (
+            hasattr(values, "ndim")
+            and values.ndim > 0
+            and values.shape[0] == member_count
+        ):
+            return values[keep_indices]
+        return values
+
+    return jax.tree.map(select, tree)
+
+
+def _slice_optimizer_members(state, keep_indices, member_count: int):
+    """Shrink an optimizer state between schedule stages without resetting it."""
+
+    state_values = {
+        name: _slice_member_tree(getattr(state, name), keep_indices, member_count)
+        for name in state.__dataclass_fields__
+    }
+    return replace(state, **state_values)
+
+
 def _stored_case_parameters(case, runtime, execution_device: str):
     """Flatten numerical and execution provenance for per-run searchability."""
 
@@ -145,73 +211,311 @@ def _stored_case_parameters(case, runtime, execution_device: str):
     }
 
 
-def _load_query_starts(document: ConfigDocument, store: ResultStore):
+def _load_query_starts(
+    document: ConfigDocument,
+    store: ResultStore,
+    *,
+    cases=None,
+):
     query = document.query
     if query is None:
         return ()
+    results = Results(store.path)
+    controls_by_run = {}
+    optimizer_states_by_run = {}
+
+    def search(where, *, limit):
+        filters = {
+            name: parse_value(value) if isinstance(value, str) else value
+            for name, value in where.items()
+        }
+        filters.setdefault("status", "complete")
+        return results.search(
+            limit=limit,
+            order_by=query.order_by,
+            descending=query.descending,
+            **filters,
+        )
+
+    def starts_from_rows(rows):
+        starts = []
+        for row in rows:
+            run_id = int(row["run_id"])
+            if query.resume_optimizer:
+                if run_id not in optimizer_states_by_run:
+                    try:
+                        optimizer_states_by_run[run_id] = results.adam_state(
+                            run_id, query.control_kind
+                        )
+                    except KeyError as error:
+                        raise ValueError(
+                            f"Initialization query selected run_id={run_id}, which "
+                            f"has no resumable {query.control_kind} Adam state."
+                        ) from error
+                controls = None
+                optimizer_state = optimizer_states_by_run[run_id]
+            else:
+                if run_id not in controls_by_run:
+                    try:
+                        controls_by_run[run_id] = results.controls(
+                            run_id, query.control_kind
+                        )
+                    except KeyError as error:
+                        raise ValueError(
+                            f"Initialization query selected run_id={run_id}, which has no "
+                            f"{query.control_kind} controls."
+                        ) from error
+                controls = controls_by_run[run_id]
+                optimizer_state = None
+            levels = query.perturbation_levels if query.perturbed else (0.0,)
+            for perturbation_index, perturbation_level in enumerate(levels):
+                starts.append(
+                    {
+                        "run_id": run_id,
+                        "controls": controls,
+                        "optimizer_state": optimizer_state,
+                        "query_perturbed": query.perturbed,
+                        "query_perturbation_index": perturbation_index,
+                        "query_perturbation_level": perturbation_level,
+                    }
+                )
+        return tuple(starts)
+
+    if not query.match_parameters:
+        rows = search(query.where, limit=query.limit)
+        if not rows:
+            raise ValueError(
+                f"Initialization query matched no runs: {dict(query.where)!r}"
+            )
+        return starts_from_rows(rows)
+
+    def frozen(value):
+        if isinstance(value, dict):
+            return tuple(sorted((name, frozen(item)) for name, item in value.items()))
+        if isinstance(value, (list, tuple)):
+            return tuple(frozen(item) for item in value)
+        return value
+
+    primary_rows = search(query.where, limit=None)
+    rows_by_parameters = {}
+    for row in primary_rows:
+        try:
+            key = tuple(frozen(row[name]) for name in query.match_parameters)
+        except KeyError as error:
+            raise ValueError(
+                f"Initialization match parameter {error.args[0]!r} is absent from "
+                "a selected source run."
+            ) from error
+        rows_by_parameters.setdefault(key, []).append(row)
+
+    fallback_rows = (
+        []
+        if query.fallback_where is None
+        else search(query.fallback_where, limit=query.limit)
+    )
+    starts_by_case = {}
+    selected_cases = document.scalar_cases() if cases is None else tuple(cases)
+    for case in selected_cases:
+        key = tuple(
+            frozen(getattr(case, name)) for name in query.match_parameters
+        )
+        rows = rows_by_parameters.get(key, ())[: query.limit]
+        if not rows:
+            rows = fallback_rows
+        if len(rows) < query.limit and not query.discover_parameters:
+            raise ValueError(
+                "Initialization query found neither enough case-matched runs nor "
+                f"fallback runs for {dict(zip(query.match_parameters, key))!r}."
+            )
+        starts_by_case[case] = starts_from_rows(rows)
+    return starts_by_case
+
+
+def _discover_query_cases(document: ConfigDocument, store: ResultStore):
+    """Snapshot exact stored parameter combinations requested by the query."""
+
+    query = document.query
+    if query is None or not query.discover_parameters:
+        return document.scalar_cases()
     filters = {
         name: parse_value(value) if isinstance(value, str) else value
         for name, value in query.where.items()
     }
     filters.setdefault("status", "complete")
-    results = Results(store.path)
-    rows = results.search(
-        limit=query.limit,
+    rows = Results(store.path).search(
         order_by=query.order_by,
         descending=query.descending,
         **filters,
     )
-    if not rows:
-        raise ValueError(f"Initialization query matched no runs: {dict(query.where)!r}")
-    starts = []
-    for row in rows:
-        run_id = int(row["run_id"])
-        try:
-            controls = results.controls(run_id, query.control_kind)
-        except KeyError as error:
-            raise ValueError(
-                f"Initialization query selected run_id={run_id}, which has no "
-                f"{query.control_kind} controls."
-            ) from error
-        starts.append({"run_id": run_id, "controls": controls})
-    return tuple(starts)
+    combinations = {
+        tuple(row[name] for name in query.discover_parameters)
+        for row in rows
+        if "best_score" in row
+        and all(name in row for name in query.discover_parameters)
+    }
+    if not combinations:
+        raise ValueError(
+            "Initialization query found no saved parameter combinations to refine."
+        )
+    template = document.scalar_cases()[0]
+    cases = tuple(
+        replace(
+            template,
+            **dict(zip(query.discover_parameters, combination)),
+        )
+        for combination in sorted(combinations, key=lambda values: tuple(map(str, values)))
+    )
+    return cases
 
 
-def _initial_raw(batch, base_raw, query_starts, dtype):
-    if not query_starts:
-        return {
-            name: jnp.tile(values, (len(batch.cases), 1))
-            for name, values in base_raw.items()
-        }
-    blocks = {"u": [], "v": []}
-    for case in batch.cases:
-        queried = [
-            stored_controls_to_raw(
-                start["controls"],
-                case.N,
-                u_max=case.u_max,
-                v_max=case.v_max,
-                u_isbound=case.u_isbound,
-                v_isbound=case.v_isbound,
-                dtype=dtype,
-            )
-            for start in query_starts
-        ]
-        for name in blocks:
-            blocks[name].append(
-                jnp.concatenate(
-                    [
-                        base_raw[name],
-                        jnp.stack([start[name] for start in queried]),
-                    ],
-                    axis=0,
+def _discovered_case_batches(document: ConfigDocument, cases):
+    """Group exact discovered cases into deterministic persisted batches."""
+
+    template_batch = document.batches()[0]
+    group_names = document.query.discover_group_parameters
+    grouped = {}
+    for case in cases:
+        key = tuple(getattr(case, name) for name in group_names)
+        grouped.setdefault(key, []).append(case)
+    batches = []
+    for group_cases in grouped.values():
+        shard_size = document.runtime.max_cases_per_batch or len(group_cases)
+        for start in range(0, len(group_cases), shard_size):
+            shard = tuple(group_cases[start : start + shard_size])
+            index = len(batches)
+            batches.append(BatchSpec(
+                batch_id=template_batch.batch_id,
+                batch_index=index,
+                seed=(template_batch.seed + index) % (2**32 - 1),
+                N=shard[0].N,
+                t_interval=shard[0].t_interval,
+                schedule=shard[0].schedule,
+                cases=shard,
+            ))
+    return tuple(batches)
+
+
+def _seed_query_starts(batch, query_starts):
+    seeded = []
+    for start in query_starts:
+        seed = None
+        if start["query_perturbed"]:
+            seed = (
+                int(batch.seed)
+                ^ (
+                    int(start["run_id"])
+                    * QUERY_PERTURBATION_SEED_MULTIPLIER
                 )
-            )
+                ^ (
+                    (int(start["query_perturbation_index"]) + 1)
+                    * QUERY_PERTURBATION_INDEX_MULTIPLIER
+                )
+            ) & 0xFFFFFFFF
+        seeded.append({**start, "query_perturbation_seed": seed})
+    return tuple(seeded)
+
+
+def _batch_query_starts(batch, query_starts):
+    """Return uniformly sized, deterministically seeded starts for each case."""
+
+    if isinstance(query_starts, dict):
+        return tuple(
+            _seed_query_starts(batch, query_starts[case]) for case in batch.cases
+        )
+    seeded = _seed_query_starts(batch, query_starts)
+    return tuple(seeded for _ in batch.cases)
+
+
+def _initial_raw(batch, base_raw, case_query_starts, dtype):
+    blocks = {"u": [], "v": []}
+    for case, query_starts in zip(batch.cases, case_query_starts):
+        queried = []
+        for start in query_starts:
+            if start["optimizer_state"] is not None:
+                raw = {
+                    name: jnp.asarray(values, dtype=dtype)
+                    for name, values in start["optimizer_state"]["raw"].items()
+                }
+                expected_shape = (case.N + 1,)
+                if set(raw) != {"u", "v"} or any(
+                    values.shape != expected_shape for values in raw.values()
+                ):
+                    raise ValueError(
+                        "Resumed Adam controls must contain u and v arrays with "
+                        f"shape {expected_shape}; source run_id={start['run_id']}."
+                    )
+                queried.append(raw)
+            else:
+                queried.append(
+                    stored_controls_to_raw(
+                        start["controls"],
+                        case.N,
+                        u_max=case.u_max,
+                        v_max=case.v_max,
+                        u_isbound=case.u_isbound,
+                        v_isbound=case.v_isbound,
+                        perturbation_level=start["query_perturbation_level"],
+                        perturbation_seed=start["query_perturbation_seed"],
+                        dtype=dtype,
+                    )
+                )
+        for name in blocks:
+            pieces = [base_raw[name]]
+            if queried:
+                pieces.append(jnp.stack([start[name] for start in queried]))
+            blocks[name].append(jnp.concatenate(pieces, axis=0))
     return {name: jnp.concatenate(values, axis=0) for name, values in blocks.items()}
 
 
-def _selected_batches(document: ConfigDocument, batch_indices=None):
-    batches = document.batches()
+def _initial_adam_moments(batch, case_query_starts, random_initialisations, dtype):
+    """Assemble per-member Adam counters and moments for exact query resumes."""
+
+    counts = []
+    blocks = {
+        moment: {"u": [], "v": []}
+        for moment in ("first_moment", "second_moment")
+    }
+    control_shape = (batch.N + 1,)
+    for query_starts in case_query_starts:
+        counts.extend([0] * random_initialisations)
+        for moment in blocks:
+            for name in blocks[moment]:
+                blocks[moment][name].append(
+                    jnp.zeros((random_initialisations, *control_shape), dtype=dtype)
+                )
+        for start in query_starts:
+            state = start["optimizer_state"]
+            if state is None:
+                counts.append(0)
+            else:
+                counts.append(int(state["count"]))
+            for moment in blocks:
+                for name in blocks[moment]:
+                    values = (
+                        jnp.zeros(control_shape, dtype=dtype)
+                        if state is None
+                        else jnp.asarray(state[moment][name], dtype=dtype)
+                    )
+                    if values.shape != control_shape:
+                        raise ValueError(
+                            f"Resumed Adam {moment}[{name!r}] must have shape "
+                            f"{control_shape}; source run_id={start['run_id']}."
+                        )
+                    blocks[moment][name].append(values[None, :])
+    return {
+        "count": jnp.asarray(counts, dtype=jnp.int32),
+        **{
+            moment: {
+                name: jnp.concatenate(values, axis=0)
+                for name, values in controls.items()
+            }
+            for moment, controls in blocks.items()
+        },
+    }
+
+
+def _selected_batches(document: ConfigDocument, batch_indices=None, *, batches=None):
+    batches = document.batches() if batches is None else tuple(batches)
     if batch_indices is None:
         return batches
     requested = set()
@@ -230,6 +534,35 @@ def _selected_batches(document: ConfigDocument, batch_indices=None):
     return selected
 
 
+def _initialization_work_items(document, batches, query_starts):
+    """Shard each case batch's complete initialization population in order."""
+
+    work_items = []
+    for batch in batches:
+        case_query_starts = _batch_query_starts(batch, query_starts)
+        query_counts = {len(starts) for starts in case_query_starts}
+        if len(query_counts) != 1:
+            raise ValueError(
+                "Case-matched initialization queries must select the same number "
+                "of starts for every case in a batch."
+            )
+        total = document.runtime.initialisations + query_counts.pop()
+        if total < 1:
+            raise ValueError(
+                "Each batch needs at least one random or queried initialization."
+            )
+        shard_size = document.runtime.max_initialisations_per_batch or total
+        ranges = tuple(
+            (start, min(start + shard_size, total))
+            for start in range(0, total, shard_size)
+        )
+        work_items.extend(
+            (batch, initialization_range, shard_index, len(ranges))
+            for shard_index, initialization_range in enumerate(ranges)
+        )
+    return tuple(work_items)
+
+
 def _run_batch(
     document: ConfigDocument,
     batch: BatchSpec,
@@ -239,13 +572,64 @@ def _run_batch(
     config_document_id: int,
     query_starts,
     device,
+    initialization_range=None,
+    initialization_batch_index: int = 0,
+    initialization_batch_count: int = 1,
+    deadline_monotonic: float | None = None,
+    batch_count: int | None = None,
 ) -> dict:
+    batch_started_monotonic = time.monotonic()
     runtime = document.runtime
-    random_initialisations = runtime.initialisations
-    queried_initialisations = len(query_starts)
+    if runtime.max_batch_elapsed_seconds is not None:
+        batch_deadline = (
+            batch_started_monotonic + runtime.max_batch_elapsed_seconds
+        )
+        deadline_monotonic = (
+            batch_deadline
+            if deadline_monotonic is None
+            else min(deadline_monotonic, batch_deadline)
+        )
+    displayed_batch_count = len(document.batches()) if batch_count is None else batch_count
+    all_case_query_starts = _batch_query_starts(batch, query_starts)
+    total_random_initialisations = runtime.initialisations
+    query_counts = {len(starts) for starts in all_case_query_starts}
+    if len(query_counts) != 1:
+        raise ValueError(
+            "Case-matched initialization queries must select the same number "
+            "of starts for every case in a batch."
+        )
+    total_queried_initialisations = query_counts.pop()
+    total_initialisations = (
+        total_random_initialisations + total_queried_initialisations
+    )
+    if total_initialisations < 1:
+        raise ValueError(
+            "Each batch needs at least one random or queried initialization."
+        )
+    if initialization_range is None:
+        initialization_range = (0, total_initialisations)
+    initialization_start, initialization_end = initialization_range
+    if not 0 <= initialization_start < initialization_end <= total_initialisations:
+        raise ValueError("Initialization batch range is outside the population.")
+    random_start = min(initialization_start, total_random_initialisations)
+    random_end = min(initialization_end, total_random_initialisations)
+    query_start = max(0, initialization_start - total_random_initialisations)
+    query_end = max(0, initialization_end - total_random_initialisations)
+    random_initialisations = random_end - random_start
+    queried_initialisations = query_end - query_start
     initialisations = random_initialisations + queried_initialisations
+    case_query_starts = tuple(
+        starts[query_start:query_end] for starts in all_case_query_starts
+    )
     dtype = jnp.float64 if runtime.use_x64 else jnp.float32
     first_case = batch.cases[0]
+    resume_optimizer = bool(
+        document.query is not None and document.query.resume_optimizer
+    )
+    if resume_optimizer and first_case.optimizer != "adam":
+        raise ValueError(
+            "query.resume_optimizer is only supported for optimizer: adam."
+        )
     batch_record = {
         "batch_id": batch.batch_id,
         "config_id": document.config_id,
@@ -258,6 +642,22 @@ def _run_batch(
         "description": document.description,
         "created_utc": document.created_utc,
     }
+    with jax.default_device(device):
+        all_base_raw, all_fourier_parameters = random_fourier_controls(
+            batch.seed,
+            total_random_initialisations,
+            batch.N,
+            num_modes=runtime.fourier_num_modes,
+            rms_amplitude=runtime.fourier_rms_amplitude,
+            intensity_fraction=runtime.fourier_intensity_fraction,
+            dtype=dtype,
+            return_parameters=True,
+        )
+        base_raw = {
+            name: values[random_start:random_end]
+            for name, values in all_base_raw.items()
+        }
+        fourier_parameters = all_fourier_parameters[random_start:random_end]
     execution_id, run_ids = store.prepare_batch(
         batch_record,
         [
@@ -266,17 +666,39 @@ def _run_batch(
         ],
         initialisations,
         config_document_id=config_document_id,
-        initialization_metadata=(
-            [{"initialization_source": "fourier"}] * random_initialisations
-            + [
-                {
-                    "initialization_source": "query",
-                    "source_run_id": start["run_id"],
-                    "source_control_kind": document.query.control_kind,
-                }
-                for start in query_starts
-            ]
-        ),
+        initialization_index_offset=initialization_start,
+        initialization_count_total=total_initialisations,
+        initialization_metadata=[
+            (
+                [
+                    {
+                        "initialization_source": "fourier",
+                        **parameters,
+                    }
+                    for parameters in fourier_parameters
+                ]
+                + [
+                    {
+                        "initialization_source": "query",
+                        "source_run_id": start["run_id"],
+                        "source_control_kind": document.query.control_kind,
+                        "source_optimizer_resumed": resume_optimizer,
+                        "query_perturbed": start["query_perturbed"],
+                        "query_perturbation_index": start[
+                            "query_perturbation_index"
+                        ],
+                        "query_perturbation_level": start[
+                            "query_perturbation_level"
+                        ],
+                        "query_perturbation_seed": start[
+                            "query_perturbation_seed"
+                        ],
+                    }
+                    for start in starts
+                ]
+            )
+            for starts in case_query_starts
+        ],
     )
     try:
         with jax.default_device(device):
@@ -292,47 +714,102 @@ def _run_batch(
                     case.effective_v_sharp != 0.0 for case in batch.cases
                 ),
             )
-            base_raw = random_fourier_controls(
-                batch.seed,
-                random_initialisations,
-                batch.N,
-                num_modes=runtime.fourier_num_modes,
-                rms_amplitude=runtime.fourier_rms_amplitude,
-                intensity_fraction=runtime.fourier_intensity_fraction,
-                dtype=dtype,
-            )
-            raw = _initial_raw(batch, base_raw, query_starts, dtype)
+            raw = _initial_raw(batch, base_raw, case_query_starts, dtype)
             parameters = _member_parameters(batch, initialisations, dtype)
             if first_case.optimizer == "adam":
                 optimizer = BatchedAdamOptimizer(
                     physics,
                     block_size=first_case.block_size,
+                    score_tolerance=first_case.J_tol is not None,
+                    u_tolerance=first_case.u_tol is not None,
+                    v_tolerance=first_case.v_tol is not None,
+                    projected_gradient_tolerance=(
+                        first_case.projected_gradient_tol is not None
+                    ),
+                    auto_halt=runtime.auto_halt,
                     use_jit=runtime.use_jit,
                 )
-            else:
+            elif first_case.optimizer == "lbfgs":
                 optimizer = BatchedLBFGSOptimizer(
                     physics,
                     block_size=first_case.block_size,
                     history_size=first_case.lbfgs_history_size,
                     max_linesearch_steps=first_case.lbfgs_max_linesearch_steps,
+                    score_tolerance=first_case.J_tol is not None,
+                    u_tolerance=first_case.u_tol is not None,
+                    v_tolerance=first_case.v_tol is not None,
+                    projected_gradient_tolerance=(
+                        first_case.projected_gradient_tol is not None
+                    ),
+                    auto_halt=runtime.auto_halt,
                     use_jit=runtime.use_jit,
                 )
-            state = optimizer.initialise(raw, parameters)
+            else:
+                optimizer = BatchedPeakRefinementOptimizer(
+                    physics,
+                    block_size=first_case.block_size,
+                    max_linesearch_steps=first_case.peak_max_linesearch_steps,
+                    score_tolerance=first_case.J_tol is not None,
+                    u_tolerance=first_case.u_tol is not None,
+                    v_tolerance=first_case.v_tol is not None,
+                    projected_gradient_tolerance=(
+                        first_case.projected_gradient_tol is not None
+                    ),
+                    auto_halt=runtime.auto_halt,
+                    use_jit=runtime.use_jit,
+                )
+            if resume_optimizer:
+                restored_adam = _initial_adam_moments(
+                    batch,
+                    case_query_starts,
+                    random_initialisations,
+                    dtype,
+                )
+                state = optimizer.initialise(raw, parameters, **restored_adam)
+            else:
+                state = optimizer.initialise(raw, parameters)
             initial_raw_host = jax.device_get(raw)
             initial_controls = jax.device_get(
                 _bounded_batch(physics, raw, parameters, runtime.use_jit)
             )
-            tracker = ToleranceTracker(first_case.block_size, initial_raw_host)
             optimizer_step_sizes = (
                 parameters["adam_learning_rate"]
                 if first_case.optimizer == "adam"
                 else jnp.ones_like(parameters["lbfgs_tolerance"])
             )
             start_step = 0
+            batch_halted = False
+            batch_time_limited = False
+            active_members = np.arange(
+                len(batch.cases) * initialisations, dtype=int
+            )
+            halted_run_count = 0
 
-            for stage_index, (steps, multiplier) in enumerate(batch.schedule):
-                if first_case.optimizer == "adam":
+            schedule_stage_number = 0
+            stored_stage_index = 0
+            stage_steps_remaining = 0
+            while True:
+                schedule_stage_index = schedule_stage_number % len(batch.schedule)
+                configured_steps, multiplier = batch.schedule[schedule_stage_index]
+                schedule_change = stage_steps_remaining == 0
+                learning_rate_update = bool(
+                    first_case.optimizer == "adam"
+                    and schedule_change
+                    and schedule_stage_number > 0
+                    and float(multiplier) != 1.0
+                )
+                if schedule_change:
+                    stage_steps_remaining = configured_steps
+                member_count = len(active_members)
+                if first_case.optimizer == "adam" and schedule_change:
                     optimizer_step_sizes = optimizer_step_sizes * multiplier
+                max_steps_per_chunk = (
+                    runtime.max_steps_per_chunk or WALLTIME_CHECK_MAX_STEPS
+                )
+                steps = min(
+                    stage_steps_remaining,
+                    max(first_case.block_size, max_steps_per_chunk),
+                )
                 state, device_output = optimizer.run_stage(
                     state,
                     parameters,
@@ -340,9 +817,15 @@ def _run_batch(
                     start_step=start_step,
                     learning_rate=optimizer_step_sizes,
                 )
-                jax.block_until_ready(device_output["score_history"])
-                # Do not copy Adam moments or live controls to host. Only the
-                # stage artifacts needed for persistence leave the device.
+                jax.block_until_ready(device_output["actual_steps"])
+                actual_steps = int(jax.device_get(device_output["actual_steps"]))
+                end_step = start_step + actual_steps
+                stage_steps_remaining -= actual_steps
+                schedule_stage_complete = stage_steps_remaining == 0
+                deadline_reached = (
+                    deadline_monotonic is not None
+                    and time.monotonic() >= deadline_monotonic
+                )
                 output = jax.device_get(
                     {
                         name: device_output[name]
@@ -350,18 +833,44 @@ def _run_batch(
                             "score_history",
                             "objective_history",
                             "penalty_history",
-                            "checkpoint_raw",
                             "best_score",
                             "best_objective",
                             "best_penalty",
                             "best_step",
+                            "stability_values",
+                            "best_stability_values",
+                            "stability_step",
+                            "stability_consecutive_blocks",
+                            "halted",
                         )
                     }
                 )
-                tolerance_rows = tracker.consume_stage(
-                    start_step=start_step,
-                    score_history=output["score_history"],
-                    checkpoint_raw=output["checkpoint_raw"],
+                for name in (
+                    "score_history",
+                    "objective_history",
+                    "penalty_history",
+                ):
+                    output[name] = output[name][:, : actual_steps + 1]
+                halted = bool(output["halted"])
+                batch_halted = halted
+                consecutive = np.asarray(
+                    output["stability_consecutive_blocks"]
+                )
+                stable_members = consecutive >= 3
+                removable_members = (
+                    stable_members
+                    if runtime.auto_halt and (schedule_stage_complete or halted)
+                    else np.zeros(member_count, dtype=bool)
+                )
+                final_schedule_stage = (
+                    not runtime.repeat_schedule_until_stable
+                    and schedule_stage_index == len(batch.schedule) - 1
+                    and schedule_stage_complete
+                )
+                terminal_members = (
+                    np.ones(member_count, dtype=bool)
+                    if halted or final_schedule_stage or deadline_reached
+                    else removable_members
                 )
                 best_controls = jax.device_get(
                     _bounded_batch(physics, state.best_raw, parameters, runtime.use_jit)
@@ -369,8 +878,26 @@ def _run_batch(
                 final_controls = jax.device_get(
                     _bounded_batch(physics, state.raw, parameters, runtime.use_jit)
                 )
+                raw_controls = jax.device_get(
+                    {"best": state.best_raw, "final": state.raw}
+                )
+                adam_states = None
+                if first_case.optimizer == "adam":
+                    adam_states = jax.device_get(
+                        {
+                            "best": {
+                                "count": state.best_count,
+                                "first_moment": state.best_first_moment,
+                                "second_moment": state.best_second_moment,
+                            },
+                            "final": {
+                                "count": state.count,
+                                "first_moment": state.first_moment,
+                                "second_moment": state.second_moment,
+                            },
+                        }
+                    )
                 member_records = []
-                member_count = len(batch.cases) * initialisations
                 if first_case.optimizer == "adam":
                     optimizer_step_sizes_host = np.asarray(
                         jax.device_get(optimizer_step_sizes)
@@ -380,8 +907,9 @@ def _run_batch(
                         jax.device_get(device_output["optimizer_step_size"])
                     )
                 for member_index in range(member_count):
+                    original_member_index = int(active_members[member_index])
                     case_index, initialization_index = _flat_member(
-                        member_index, initialisations
+                        original_member_index, initialisations
                     )
                     case = batch.cases[case_index]
                     record = {
@@ -399,6 +927,9 @@ def _run_batch(
                             "optimizer_step_size": float(
                                 optimizer_step_sizes_host[member_index]
                             ),
+                            "schedule_stage_index": schedule_stage_index,
+                            "schedule_change": schedule_change,
+                            "learning_rate_update": learning_rate_update,
                         },
                         "history": {
                             "score": output["score_history"][member_index],
@@ -413,6 +944,14 @@ def _run_batch(
                             name: values[member_index]
                             for name, values in final_controls.items()
                         },
+                        "best_raw": {
+                            name: values[member_index]
+                            for name, values in raw_controls["best"].items()
+                        },
+                        "final_raw": {
+                            name: values[member_index]
+                            for name, values in raw_controls["final"].items()
+                        },
                         "best_derivatives": best_control_derivatives(
                             {
                                 name: values[member_index]
@@ -422,59 +961,176 @@ def _run_batch(
                             u_sharp_active=case.effective_u_sharp != 0.0,
                             v_sharp_active=case.effective_v_sharp != 0.0,
                         ),
+                        "best_diagnostics": {
+                            name: float(values[member_index])
+                            for name, values in output[
+                                "best_stability_values"
+                            ].items()
+                        },
                     }
-                    if stage_index == 0:
+                    if stored_stage_index == 0:
                         record["initial"] = {
-                            name: values[member_index]
+                            name: values[original_member_index]
                             for name, values in initial_controls.items()
                         }
+                        record["initial_raw"] = {
+                            name: values[original_member_index]
+                            for name, values in initial_raw_host.items()
+                        }
+                    if adam_states is not None:
+                        record["adam_states"] = {
+                            kind: {
+                                "count": int(state_values["count"][member_index]),
+                                **{
+                                    moment: {
+                                        name: values[member_index]
+                                        for name, values in controls.items()
+                                    }
+                                    for moment, controls in state_values.items()
+                                    if moment != "count"
+                                },
+                            }
+                            for kind, state_values in adam_states.items()
+                        }
+                    if terminal_members[member_index]:
+                        if deadline_reached:
+                            record["termination_reason"] = "time_limit"
+                        elif consecutive[member_index] >= 3:
+                            record["termination_reason"] = "stability"
+                        else:
+                            record["termination_reason"] = "schedule_end"
                     member_records.append(record)
                 stored_tolerances = []
-                for item in tolerance_rows:
-                    case_index, initialization_index = _flat_member(
-                        item["member"], initialisations
-                    )
-                    case = batch.cases[case_index]
-                    passed = (
-                        item["score_tolerance"] < case.J_tol
-                        and (case.u_tol is None or item["u_tolerance"] < case.u_tol)
-                        and (case.v_tol is None or item["v_tolerance"] < case.v_tol)
-                    )
-                    stored_tolerances.append(
-                        {
-                            **item,
-                            "run_id": run_ids[(case_index, initialization_index)],
-                            "passed": passed,
-                        }
-                    )
+                if np.any(terminal_members):
+                    stability_step = int(output["stability_step"])
+                    stability_values = {
+                        name: np.asarray(values)
+                        for name, values in output["stability_values"].items()
+                    }
+                    for member_index in range(member_count):
+                        if not terminal_members[member_index]:
+                            continue
+                        original_member_index = int(active_members[member_index])
+                        case_index, initialization_index = _flat_member(
+                            original_member_index, initialisations
+                        )
+                        stored_tolerances.append(
+                            {
+                                "member": member_index,
+                                "run_id": run_ids[
+                                    (case_index, initialization_index)
+                                ],
+                                "step": stability_step,
+                                **{
+                                    name: float(values[member_index])
+                                    for name, values in stability_values.items()
+                                },
+                                "consecutive_blocks": int(consecutive[member_index]),
+                                "required_consecutive_blocks": 3,
+                                "passed": bool(consecutive[member_index] >= 3),
+                                "auto_halted": bool(
+                                    removable_members[member_index]
+                                ),
+                            }
+                        )
                 store.save_stage(
                     execution_id=execution_id,
-                    stage_index=stage_index,
+                    stage_index=stored_stage_index,
                     start_step=start_step,
-                    end_step=start_step + steps,
+                    end_step=end_step,
                     members=member_records,
                     tolerances=stored_tolerances,
                 )
-                start_step += steps
+                start_step = end_step
+                newly_halted = int(np.count_nonzero(removable_members))
+                elapsed_seconds = time.monotonic() - batch_started_monotonic
                 print(
                     f"{document.config_file} | batch {batch.batch_index + 1}/"
-                    f"{len(document.batches())} | stage {stage_index + 1}/"
-                    f"{len(batch.schedule)} saved at step {start_step}",
+                    f"{displayed_batch_count} | initialization batch "
+                    f"{initialization_batch_index + 1}/{initialization_batch_count} | "
+                    f"stage {schedule_stage_index + 1}/"
+                    f"{len(batch.schedule)} chunk saved at step {start_step}"
+                    f"{' (cycle ' + str(schedule_stage_number // len(batch.schedule) + 1) + ')' if runtime.repeat_schedule_until_stable else ''}"
+                    f"{' (stable: auto-halted)' if halted else ''}",
+                    f"halted {halted_run_count + newly_halted}/"
+                    f"{len(batch.cases) * initialisations} | "
+                    f"elapsed {elapsed_seconds / 3600:.2f} h",
                     flush=True,
                 )
-                # Only optimizer state, best controls, and one tolerance block
-                # remain live after a committed stage.
-                del output, device_output, member_records, tolerance_rows
+                del output, device_output, member_records
                 gc.collect()
+                if deadline_reached:
+                    batch_time_limited = True
+                    break
+                if halted:
+                    halted_run_count += newly_halted
+                    batch_halted = True
+                    break
+                if not schedule_stage_complete:
+                    stored_stage_index += 1
+                    continue
+                if final_schedule_stage:
+                    break
+                remaining_count = member_count - newly_halted
+                halted_run_count += newly_halted
+                next_stage_index = (schedule_stage_number + 1) % len(batch.schedule)
+                next_multiplier = batch.schedule[next_stage_index][1]
+                boundary_name = (
+                    "learning-rate change"
+                    if first_case.optimizer == "adam" and next_multiplier != 1.0
+                    else "refinement-cycle boundary"
+                    if first_case.optimizer == "peak_refinement"
+                    else "schedule boundary"
+                )
+                print(
+                    f"{document.config_file} | initialization batch "
+                    f"{initialization_batch_index + 1}/{initialization_batch_count} | "
+                    f"{boundary_name} after "
+                    f"step {start_step}: halted {newly_halted} stable run(s); "
+                    f"{remaining_count} remain in the next batch",
+                    flush=True,
+                )
+                if remaining_count == 0:
+                    batch_halted = True
+                    break
+                if newly_halted:
+                    keep_positions = np.flatnonzero(~removable_members)
+                    keep_indices = jnp.asarray(
+                        keep_positions, dtype=jnp.int32
+                    )
+                    state = _slice_optimizer_members(
+                        state, keep_indices, member_count
+                    )
+                    parameters = _slice_member_tree(
+                        parameters, keep_indices, member_count
+                    )
+                    optimizer_step_sizes = _slice_member_tree(
+                        optimizer_step_sizes, keep_indices, member_count
+                    )
+                    active_members = active_members[keep_positions]
+                schedule_stage_number += 1
+                stored_stage_index += 1
+                stage_steps_remaining = 0
 
             store.complete_batch(execution_id, run_ids.values())
         return {
             "batch_id": batch.batch_id,
+            "batch_index": batch.batch_index,
+            "initialization_batch_index": initialization_batch_index,
+            "initialization_batch_count": initialization_batch_count,
             "cases": len(batch.cases),
             "runs": len(batch.cases) * initialisations,
             "random_initialisations": random_initialisations,
             "queried_initialisations": queried_initialisations,
             "steps": start_step,
+            "auto_halted": batch_halted,
+            "time_limited": batch_time_limited,
+            "termination_reason": (
+                "time_limit"
+                if batch_time_limited
+                else "stability" if batch_halted else "schedule_end"
+            ),
+            "halted_runs": halted_run_count,
         }
     except Exception as error:
         store.fail_batch(
@@ -490,6 +1146,7 @@ def run_config(
     *,
     queue_id: int | None = None,
     batch_indices=None,
+    deadline_monotonic: float | None = None,
 ) -> list[dict]:
     """Run one config; compatible points batch while shape-changing points queue."""
 
@@ -508,12 +1165,68 @@ def run_config(
             "config": document_to_dict(document),
         }
     )
-    query_starts = _load_query_starts(document, store)
-    batches = _selected_batches(document, batch_indices)
-    workers = min(document.runtime.concurrent_workers, len(batches))
+    discovered_cases = _discover_query_cases(document, store)
+    available_batches = (
+        _discovered_case_batches(document, discovered_cases)
+        if document.query is not None and document.query.discover_parameters
+        else document.batches()
+    )
+    query_starts = _load_query_starts(
+        document,
+        store,
+        cases=discovered_cases,
+    )
+    batches = _selected_batches(
+        document,
+        batch_indices,
+        batches=available_batches,
+    )
+    if document.runtime.repeat_schedule_until_stable and any(
+        case.optimizer not in {"lbfgs", "peak_refinement"}
+        for case in discovered_cases
+    ):
+        raise ValueError(
+            "repeat_schedule_until_stable is supported only for optimizer: "
+            "lbfgs or peak_refinement."
+        )
+    configured_deadline = (
+        None
+        if document.runtime.max_elapsed_seconds is None
+        else time.monotonic() + document.runtime.max_elapsed_seconds
+    )
+    if deadline_monotonic is None:
+        deadline_monotonic = configured_deadline
+    elif configured_deadline is not None:
+        deadline_monotonic = min(deadline_monotonic, configured_deadline)
+    work_items = _initialization_work_items(document, batches, query_starts)
+    per_batch_elapsed_seconds = (
+        document.runtime.max_elapsed_seconds / len(work_items)
+        if document.runtime.distribute_max_elapsed_across_batches
+        else None
+    )
+    workers = min(document.runtime.concurrent_workers, len(work_items))
     if workers == 1:
-        return [
-            _run_batch(
+        completed = []
+        for (
+            batch,
+            initialization_range,
+            initialization_batch_index,
+            initialization_batch_count,
+        ) in work_items:
+            if (
+                deadline_monotonic is not None
+                and time.monotonic() >= deadline_monotonic
+            ):
+                break
+            batch_deadline = deadline_monotonic
+            if per_batch_elapsed_seconds is not None:
+                fair_deadline = time.monotonic() + per_batch_elapsed_seconds
+                batch_deadline = (
+                    fair_deadline
+                    if batch_deadline is None
+                    else min(batch_deadline, fair_deadline)
+                )
+            completed.append(_run_batch(
                 document,
                 batch,
                 queue_id=queue_id,
@@ -521,9 +1234,13 @@ def run_config(
                 config_document_id=config_document_id,
                 query_starts=query_starts,
                 device=device,
-            )
-            for batch in batches
-        ]
+                initialization_range=initialization_range,
+                initialization_batch_index=initialization_batch_index,
+                initialization_batch_count=initialization_batch_count,
+                deadline_monotonic=batch_deadline,
+                batch_count=len(batches),
+            ))
+        return completed
     completed = []
     with ThreadPoolExecutor(max_workers=workers, thread_name_prefix="ofc-batch") as pool:
         futures = {
@@ -536,16 +1253,30 @@ def run_config(
                 config_document_id=config_document_id,
                 query_starts=query_starts,
                 device=device,
-            ): batch
-            for batch in batches
+                initialization_range=initialization_range,
+                initialization_batch_index=initialization_batch_index,
+                initialization_batch_count=initialization_batch_count,
+                deadline_monotonic=deadline_monotonic,
+                batch_count=len(batches),
+            ): work_index
+            for work_index, (
+                batch,
+                initialization_range,
+                initialization_batch_index,
+                initialization_batch_count,
+            ) in enumerate(work_items)
         }
         for future in as_completed(futures):
-            completed.append((futures[future].batch_index, future.result()))
+            completed.append((futures[future], future.result()))
     return [result for _, result in sorted(completed)]
 
 
 def run_configs(
-    configs: Iterable[str | Path], *, batch_indices=None, queue_id: int | None = None
+    configs: Iterable[str | Path],
+    *,
+    batch_indices=None,
+    queue_id: int | None = None,
+    continue_on_error: bool = False,
 ) -> dict:
     """Queue config files in argument order under one random queue identifier."""
 
@@ -562,15 +1293,35 @@ def run_configs(
     queue_id = random_id() if queue_id is None else int(queue_id)
     if not 0 < queue_id <= 2**63 - 1:
         raise ValueError("queue_id must be a non-zero signed-64-bit integer.")
+    if not isinstance(continue_on_error, bool):
+        raise ValueError("continue_on_error must be a boolean.")
     output = []
     for document in documents:
-        output.append(
-            {
+        try:
+            output.append(
+                {
+                    "config_id": document.config_id,
+                    "config_file": document.config_file,
+                    "status": "complete",
+                    "batches": run_config(
+                        document, queue_id=queue_id, batch_indices=batch_indices
+                    ),
+                }
+            )
+        except Exception as error:
+            if not continue_on_error:
+                raise
+            failure = {
                 "config_id": document.config_id,
                 "config_file": document.config_file,
-                "batches": run_config(
-                    document, queue_id=queue_id, batch_indices=batch_indices
-                ),
+                "status": "failed",
+                "error": f"{type(error).__name__}: {error}",
+                "batches": [],
             }
-        )
+            output.append(failure)
+            print(
+                f"{document.config_file} failed; continuing to the next queued "
+                f"config: {failure['error']}",
+                flush=True,
+            )
     return {"queue_id": queue_id, "configs": output}

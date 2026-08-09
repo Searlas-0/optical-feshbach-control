@@ -19,8 +19,17 @@ from .storage import decode_array, parameter_database_path
 
 RUN_COLUMNS = {
     "run_id": "r.run_id",
+    "config_id": "r.config_id",
+    "config_document_id": "r.config_document_id",
+    "batch_id": "r.batch_id",
+    "execution_id": "r.execution_id",
+    "queue_id": "r.queue_id",
+    "batch_index": "r.batch_index",
     "status": "rp.status",
+    "started_utc": "r.started_utc",
+    "completed_utc": "r.completed_utc",
 }
+RUN_INDEX_FIELDS = tuple(name for name in RUN_COLUMNS if name != "status")
 PHYSICAL_ALIASES = {
     "best_obj": "best_objective",
     "final_obj": "final_objective",
@@ -41,6 +50,8 @@ PHYSICAL_VALUES = {
     "final_score",
     "final_objective",
     "final_penalty",
+    "termination_reason",
+    "best_projected_gradient_rms",
     "best_max_abs_du_dt",
     "best_max_abs_dv_dt",
     "best_max_abs_d2u_dt2",
@@ -187,7 +198,8 @@ class Results:
 
         direction = "DESC" if descending else "ASC"
         sql = f"""
-            SELECT r.run_id, rp.status, rp.parameters_json
+            SELECT {', '.join(f'{RUN_COLUMNS[name]} AS {name}' for name in RUN_INDEX_FIELDS)},
+                   rp.status, rp.parameters_json
             FROM runs r
             JOIN methodology.run_parameters rp ON rp.run_id=r.run_id
             {'WHERE ' + ' AND '.join(clauses) if clauses else ''}
@@ -220,13 +232,99 @@ class Results:
             run_id = int(row["run_id"])
             item = json.loads(row["parameters_json"])
             item.update(physical[run_id])
+            item.update({name: row[name] for name in RUN_INDEX_FIELDS})
             item.update({"run_id": run_id, "status": row["status"]})
             output.append(item)
         return output
 
+    def config_runs(self, **filters):
+        """Return matching configuration executions in newest-first order.
+
+        A configuration execution is one immutable config document submitted
+        under one queue ID. Multiple persisted batches from the same Slurm
+        submission therefore remain one configuration run.
+        """
+
+        groups = {}
+        for row in self.search(**filters):
+            key = (int(row["config_document_id"]), int(row["queue_id"]))
+            groups.setdefault(key, []).append(row)
+
+        summaries = []
+        for (config_document_id, queue_id), rows in groups.items():
+            starts = [str(row["started_utc"]) for row in rows if row["started_utc"]]
+            completions = [
+                str(row["completed_utc"]) for row in rows if row["completed_utc"]
+            ]
+            statuses = {str(row["status"]) for row in rows}
+            status = next(iter(statuses)) if len(statuses) == 1 else "mixed"
+            summaries.append(
+                {
+                    "config_document_id": config_document_id,
+                    "config_id": int(rows[0]["config_id"]),
+                    "config_name": str(rows[0]["config_name"]),
+                    "queue_id": queue_id,
+                    "started_utc": min(starts) if starts else None,
+                    "completed_utc": max(completions) if completions else None,
+                    "status": status,
+                    "run_count": len(rows),
+                    "first_run_id": min(int(row["run_id"]) for row in rows),
+                    "last_run_id": max(int(row["run_id"]) for row in rows),
+                }
+            )
+        summaries.sort(
+            key=lambda item: (item["started_utc"] or "", item["first_run_id"]),
+            reverse=True,
+        )
+        for rank, summary in enumerate(summaries, start=1):
+            summary["recency_rank"] = rank
+        return summaries
+
+    def search_config_run(
+        self,
+        rank=1,
+        *,
+        limit: int | None = None,
+        order_by="run_id",
+        descending: bool = False,
+        **filters,
+    ):
+        """Search the Nth most recent matching configuration execution."""
+
+        if isinstance(rank, bool) or not isinstance(rank, int) or rank < 1:
+            raise ValueError("config run rank must be a positive integer.")
+        config_runs = self.config_runs(**filters)
+        if rank > len(config_runs):
+            return []
+        selected = config_runs[rank - 1]
+        selected_filters = dict(filters)
+        selected_filters.update(
+            {
+                "config_document_id": selected["config_document_id"],
+                "queue_id": selected["queue_id"],
+            }
+        )
+        return self.search(
+            limit=limit,
+            order_by=order_by,
+            descending=descending,
+            **selected_filters,
+        )
+
     def controls(self, run_id: int, kind: str = "best") -> dict[str, np.ndarray]:
-        if kind not in {"initial", "best", "final"}:
-            raise ValueError("kind must be initial, best, or final.")
+        valid_kinds = {
+            "initial",
+            "best",
+            "final",
+            "initial_raw",
+            "best_raw",
+            "final_raw",
+        }
+        if kind not in valid_kinds:
+            raise ValueError(
+                "kind must be initial, best, final, initial_raw, best_raw, "
+                "or final_raw."
+            )
         with self.connect() as connection:
             rows = connection.execute(
                 "SELECT name, values_blob FROM control_arrays WHERE run_id=? AND kind=?",
@@ -235,6 +333,56 @@ class Results:
         if not rows:
             raise KeyError(f"No {kind} controls found for run_id={run_id}.")
         return {row["name"]: decode_array(row["values_blob"]) for row in rows}
+
+    def adam_state(self, run_id: int, kind: str = "final") -> dict[str, Any]:
+        """Return an exactly resumable best or final Adam state for a new run."""
+
+        if kind not in {"best", "final"}:
+            raise ValueError("Adam state kind must be best or final.")
+        metadata = None
+        try:
+            with self.connect() as connection:
+                rows = connection.execute(
+                    """SELECT moment, name, values_blob
+                       FROM optimizer_state_arrays
+                       WHERE run_id=? AND kind=?
+                       ORDER BY moment, name""",
+                    (run_id, kind),
+                ).fetchall()
+                try:
+                    metadata = connection.execute(
+                        """SELECT optimizer, count
+                           FROM optimizer_states
+                           WHERE run_id=? AND kind=?""",
+                        (run_id, kind),
+                    ).fetchone()
+                except sqlite3.OperationalError as error:
+                    if "no such table" not in str(error):
+                        raise
+        except sqlite3.OperationalError as error:
+            if "no such table" not in str(error):
+                raise
+            rows = []
+        if not rows:
+            raise KeyError(f"No {kind} Adam state found for run_id={run_id}.")
+
+        matches = self.search(run_id=run_id, limit=1)
+        if not matches:
+            raise KeyError(f"Unknown run_id={run_id}.")
+        count_name = "best_step" if kind == "best" else "completed_steps"
+        result = {
+            "raw": self.controls(run_id, f"{kind}_raw"),
+            "count": int(
+                metadata["count"] if metadata is not None else matches[0][count_name]
+            ),
+        }
+        for moment in ("first_moment", "second_moment"):
+            result[moment] = {
+                row["name"]: decode_array(row["values_blob"])
+                for row in rows
+                if row["moment"] == moment
+            }
+        return result
 
     def history(self, run_id: int) -> dict[str, np.ndarray]:
         with self.connect() as connection:
@@ -266,8 +414,10 @@ class Results:
                 (run_id,),
             ).fetchall()
         sizes = []
+        stage_values = []
         for index, stage in enumerate(stages):
             values = json.loads(stage["parameters_json"])
+            stage_values.append(values)
             length = stage["end_step"] - stage["start_step"] + (
                 1 if index == 0 else 0
             )
@@ -275,16 +425,42 @@ class Results:
                 np.full(length, values.get("optimizer_step_size", np.nan), dtype=float)
             )
         if sizes:
+            marker_flags = []
+            previous_adam_rate = None
+            for stage, values in zip(stages, stage_values):
+                rate = float(values.get("optimizer_step_size", np.nan))
+                explicit_update = values.get("learning_rate_update")
+                if stage["start_step"] == 0:
+                    marker = True
+                elif explicit_update is not None:
+                    marker = bool(explicit_update)
+                elif values.get("optimizer") != "adam":
+                    marker = False
+                else:
+                    # Older records predate the explicit distinction between
+                    # a stage/chunk boundary and an actual Adam rate update.
+                    marker = bool(values.get("schedule_change", True)) and not (
+                        previous_adam_rate is not None
+                        and rate == previous_adam_rate
+                    )
+                marker_flags.append(marker)
+                if values.get("optimizer") == "adam" and np.isfinite(rate):
+                    previous_adam_rate = rate
+
             output["optimizer_step_size"] = np.concatenate(sizes)
             output["optimizer_step_size_change_steps"] = np.asarray(
-                [stage["start_step"] for stage in stages], dtype=int
+                [
+                    stage["start_step"]
+                    for stage, marker in zip(stages, marker_flags)
+                    if marker
+                ],
+                dtype=int,
             )
             output["stage_optimizer_step_sizes"] = np.asarray(
                 [
-                    json.loads(stage["parameters_json"]).get(
-                        "optimizer_step_size", np.nan
-                    )
-                    for stage in stages
+                    values.get("optimizer_step_size", np.nan)
+                    for values, marker in zip(stage_values, marker_flags)
+                    if marker
                 ],
                 dtype=float,
             )
@@ -351,8 +527,22 @@ class Results:
         if arrays:
             result["history"] = self.history(run_id)
             result["tolerances"] = self.tolerances(run_id)
-            result["controls"] = {
+            controls = {
                 kind: self.controls(run_id, kind)
                 for kind in ("initial", "best", "final")
             }
+            for kind in ("initial_raw", "best_raw", "final_raw"):
+                try:
+                    controls[kind] = self.controls(run_id, kind)
+                except KeyError:
+                    pass
+            result["controls"] = controls
+            adam_states = {}
+            for kind in ("best", "final"):
+                try:
+                    adam_states[kind] = self.adam_state(run_id, kind)
+                except KeyError:
+                    pass
+            if adam_states:
+                result["adam_states"] = adam_states
         return result

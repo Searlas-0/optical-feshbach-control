@@ -1,0 +1,135 @@
+schema_version: 2
+config_id: 9029275340158474508
+name: N100_loose_cap_u1280_optimizer_sweep
+description: N=100 loose-cap optimizer sweep seeded from the top three u_max=1280
+  runs of queue 696482.
+created_utc: '2026-08-08T20:20:23.362497+00:00'
+parameters:
+  N: 100
+  t_interval: 4.0
+  r_bg: -0.008716
+  u_isbound: true
+  v_isbound: true
+  u_max: 1280.0
+  v_max: 1000.0
+  slew_limit: 0.05
+  optimizer: adam
+  schedule:
+  - - - 1000
+      - 1.0
+    - - 10000
+      - 0.1
+    - - 170000
+      - 0.1
+  - - - 1000
+      - 1.0
+    - - 10000
+      - 0.2
+    - - 170000
+      - 0.2
+  - - - 1000
+      - 1.0
+    - - 10000
+      - 0.05
+    - - 170000
+      - 0.2
+  - - - 2000
+      - 1.0
+    - - 20000
+      - 0.1
+    - - 180000
+      - 0.1
+  - - - 2000
+      - 1.0
+    - - 20000
+      - 0.2
+    - - 180000
+      - 0.2
+  - - - 5000
+      - 1.0
+    - - 25000
+      - 0.1
+    - - 190000
+      - 0.2
+  - - - 5000
+      - 1.0
+    - - 25000
+      - 0.2
+    - - 190000
+      - 0.1
+  - - - 10000
+      - 1.0
+    - - 40000
+      - 0.2
+    - - 200000
+      - 0.2
+  adam_learning_rate:
+  - 0.02
+  - 0.05
+  - 0.1
+  adam_beta1:
+  - 0.8
+  - 0.9
+  - 0.95
+  adam_beta2:
+  - 0.99
+  - 0.999
+  adam_eps: 1.0e-08
+  lbfgs_history_size: 100
+  lbfgs_max_linesearch_steps: 200
+  lbfgs_tolerance: 1.0e-06
+  smoothness:
+  - 5.0e-08
+  - 2.0e-07
+  - 5.0e-07
+  - 2.0e-06
+  u_smooth: null
+  v_smooth: null
+  sharpness:
+  - 5.0e-09
+  - 2.0e-08
+  - 5.0e-08
+  - 2.0e-07
+  u_sharp: null
+  v_sharp: null
+  block_size: 500
+  J_tol: 1.0e-05
+  u_tol: 0.001
+  v_tol: 0.001
+runtime:
+  initialisations: 10
+  fourier_num_modes: 5
+  fourier_rms_amplitude: 0.3
+  fourier_intensity_fraction: 0.3
+  use_jit: true
+  use_x64: true
+  device: cpu
+  concurrent_workers: 1
+  database: results/results.sqlite3
+query:
+  where:
+    config_id: 7388691636552290904
+    queue_id: 696482
+    status: complete
+    N: 100
+    u_max: 1280.0
+  limit: 3
+  order_by: best_score
+  descending: true
+  control_kind: best
+  perturbed: true
+  perturbation_levels:
+  - 0.0025
+  - 0.005
+  - 0.01
+  - 0.025
+  - 0.05
+batch_ids:
+  '{"N":100,"schedule":[[1000,1.0],[10000,0.1],[170000,0.1]],"t_interval":4.0}': 3668403035006680062
+  '{"N":100,"schedule":[[1000,1.0],[10000,0.2],[170000,0.2]],"t_interval":4.0}': 6981057724468762928
+  '{"N":100,"schedule":[[1000,1.0],[10000,0.05],[170000,0.2]],"t_interval":4.0}': 6677276099359237154
+  '{"N":100,"schedule":[[2000,1.0],[20000,0.1],[180000,0.1]],"t_interval":4.0}': 7077221165580481943
+  '{"N":100,"schedule":[[2000,1.0],[20000,0.2],[180000,0.2]],"t_interval":4.0}': 6733838843851981327
+  '{"N":100,"schedule":[[5000,1.0],[25000,0.1],[190000,0.2]],"t_interval":4.0}': 6567226413006619599
+  '{"N":100,"schedule":[[5000,1.0],[25000,0.2],[190000,0.1]],"t_interval":4.0}': 7978581771281134572
+  '{"N":100,"schedule":[[10000,1.0],[40000,0.2],[200000,0.2]],"t_interval":4.0}': 3593565919092815722

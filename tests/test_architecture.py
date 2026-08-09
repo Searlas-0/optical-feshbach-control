@@ -19,6 +19,13 @@ def imported_modules(path):
 
 def test_isolated_processes_do_not_import_runner_or_each_other():
     boundaries = {
+        PACKAGE / "physical.py": {
+            "config",
+            "runner",
+            "results",
+            "storage",
+            "plotting",
+        },
         PACKAGE / "config.py": {"runner", "results", "plotting"},
         PACKAGE / "results.py": {"runner", "config", "plotting"},
         PACKAGE / "plotting.py": {"runner", "config", "results"},

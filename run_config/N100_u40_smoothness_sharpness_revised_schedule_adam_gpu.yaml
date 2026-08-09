@@ -1,0 +1,111 @@
+schema_version: 3
+config_id: 621766000307099895
+name: N100_u40_smoothness_sharpness_revised_schedule_adam_gpu
+description: N=100 u_max=40 three-decade 15x15 smoothness/sharpness revised-schedule
+  Adam GPU sweep.
+created_utc: '2026-08-09T16:24:44.221349+00:00'
+parameters:
+  N: 100
+  t_interval: 4.0
+  r_bg: -0.008716
+  u_isbound: true
+  v_isbound: true
+  u_max: 40.0
+  v_max: 1000.0
+  slew_limit: 0.05
+  optimizer: adam
+  schedule:
+  - - 1000
+    - 1.0
+  - - 30000
+    - 0.1
+  - - 60000
+    - 0.5
+  adam_learning_rate: 0.1
+  adam_beta1: 0.9
+  adam_beta2: 0.99
+  adam_eps: 1.0e-08
+  smoothness:
+  - 3.952847075210474e-09
+  - 6.474343349039012e-09
+  - 1.0604286228050901e-08
+  - 1.7368693679664216e-08
+  - 2.844807407593485e-08
+  - 4.6594921503936746e-08
+  - 7.631752870731657e-08
+  - 1.25e-07
+  - 2.0473671336925796e-07
+  - 3.3533697440996555e-07
+  - 5.492463200950988e-07
+  - 8.996070912514401e-07
+  - 1.4734607934919831e-06
+  - 2.413372161104062e-06
+  - 3.9528470752104736e-06
+  u_smooth: null
+  v_smooth: null
+  sharpness:
+  - 1.5811388300841896e-09
+  - 2.589737339615605e-09
+  - 4.2417144912203604e-09
+  - 6.947477471865687e-09
+  - 1.137922963037394e-08
+  - 1.8637968601574698e-08
+  - 3.052701148292663e-08
+  - 5.0e-08
+  - 8.189468534770319e-08
+  - 1.3413478976398622e-07
+  - 2.196985280380395e-07
+  - 3.59842836500576e-07
+  - 5.893843173967932e-07
+  - 9.653488644416247e-07
+  - 1.5811388300841896e-06
+  u_sharp: null
+  v_sharp: null
+  block_size: 1000
+  J_tol: 1.0e-05
+  u_tol: 0.0001
+  v_tol: 0.0001
+  projected_gradient_tol: 0.0001
+  projected_gradient_alpha: 1.0
+runtime:
+  initialisations: 50
+  fourier_num_modes: 5
+  fourier_rms_amplitude: 0.3
+  fourier_intensity_fraction: 0.3
+  use_jit: true
+  use_x64: true
+  device: gpu
+  concurrent_workers: 1
+  max_cases_per_batch: 1
+  max_initialisations_per_batch: 25
+  max_batch_elapsed_seconds: 18000.0
+  max_elapsed_seconds: null
+  distribute_max_elapsed_across_batches: false
+  repeat_schedule_until_stable: false
+  auto_halt: true
+  database: results/results.sqlite3
+query:
+  where:
+    status: complete
+    N: 100
+    u_max: 40.0
+    smoothness: 1.25e-07
+    sharpness: 5.0e-08
+  limit: 5
+  order_by: best_score
+  descending: true
+  control_kind: best
+  resume_optimizer: false
+  perturbed: true
+  perturbation_levels:
+  - 0.0005
+  - 0.001
+  - 0.0025
+  - 0.005
+  - 0.01
+  match_parameters: []
+  discover_parameters: []
+  discover_group_parameters: []
+  fallback_where: null
+batch_ids:
+  '{"N":100,"schedule":[[1000,1.0],[30000,0.1],[60000,0.5]],"t_interval":4.0}': 4324846610543226832

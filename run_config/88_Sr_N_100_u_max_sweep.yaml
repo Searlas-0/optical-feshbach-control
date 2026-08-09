@@ -56,7 +56,7 @@ runtime:
   use_x64: true
   device: cpu
   concurrent_workers: 1
-  database: results/88_Sr_N_100_u_max_sweep.sqlite3
+  database: results/results.sqlite3
 query: null
 batch_ids:
   '{"N":100,"schedule":[[1000,1.0],[10000,0.1],[100000,0.1]],"t_interval":4.0}': 8252113692541670192

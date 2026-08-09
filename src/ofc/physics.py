@@ -33,12 +33,64 @@ class Physics:
     def bounded_controls(
         self, raw: Mapping[str, jax.Array], parameters: Mapping[str, jax.Array]
     ) -> dict[str, jax.Array]:
+        return self.controls_from_normalised(
+            self.normalised_controls(raw), parameters
+        )
+
+    def normalised_controls(
+        self, raw: Mapping[str, jax.Array]
+    ) -> dict[str, jax.Array]:
+        """Map optimizer variables to unit-scaled feasible coordinates."""
+
         u = jnp.asarray(raw["u"], dtype=self.dtype)
         v = jnp.asarray(raw["v"], dtype=self.dtype)
         if self.u_isbound:
-            u = parameters["u_max"] * jax.nn.sigmoid(u)
+            u = jax.nn.sigmoid(u)
         if self.v_isbound:
-            v = parameters["v_max"] * jnp.tanh(v)
+            v = jnp.tanh(v)
+        return {"u": u, "v": v}
+
+    def controls_from_normalised(
+        self,
+        normalised: Mapping[str, jax.Array],
+        parameters: Mapping[str, jax.Array],
+    ) -> dict[str, jax.Array]:
+        """Convert normalized feasible coordinates to physical controls."""
+
+        u = jnp.asarray(normalised["u"], dtype=self.dtype)
+        v = jnp.asarray(normalised["v"], dtype=self.dtype)
+        if self.u_isbound:
+            u = parameters["u_max"] * u
+        if self.v_isbound:
+            v = parameters["v_max"] * v
+        return {"u": u, "v": v}
+
+    def project_normalised_controls(
+        self, controls: Mapping[str, jax.Array]
+    ) -> dict[str, jax.Array]:
+        """Project normalized controls onto their configured feasible set."""
+
+        u = jnp.asarray(controls["u"], dtype=self.dtype)
+        v = jnp.asarray(controls["v"], dtype=self.dtype)
+        if self.u_isbound:
+            u = jnp.clip(u, 0.0, 1.0)
+        if self.v_isbound:
+            v = jnp.clip(v, -1.0, 1.0)
+        return {"u": u, "v": v}
+
+    def raw_from_normalised(
+        self, normalised: Mapping[str, jax.Array]
+    ) -> dict[str, jax.Array]:
+        """Map feasible coordinates back to finite optimizer coordinates."""
+
+        u = jnp.asarray(normalised["u"], dtype=self.dtype)
+        v = jnp.asarray(normalised["v"], dtype=self.dtype)
+        interior = jnp.asarray(1e-12, dtype=self.dtype)
+        if self.u_isbound:
+            fraction = jnp.clip(u, interior, 1.0 - interior)
+            u = jnp.log(fraction) - jnp.log1p(-fraction)
+        if self.v_isbound:
+            v = jnp.arctanh(jnp.clip(v, -1.0 + interior, 1.0 - interior))
         return {"u": u, "v": v}
 
     def dimensionless_scattering_length(
@@ -136,10 +188,9 @@ class Physics:
             )
         return penalty
 
-    def metrics(self, raw, parameters):
-        """Return maximized score, molecular objective, and regularization."""
+    def metrics_from_controls(self, controls, parameters):
+        """Return metrics for physical bounded controls."""
 
-        controls = self.bounded_controls(raw, parameters)
         scattering_length = self.dimensionless_scattering_length(
             controls,
             parameters["r_bg"],
@@ -150,6 +201,21 @@ class Physics:
         )
         penalty = self.smoothness_penalty(controls, parameters)
         return objective - penalty, objective, penalty
+
+    def metrics(self, raw, parameters):
+        """Return maximized score, molecular objective, and regularization."""
+
+        return self.metrics_from_controls(
+            self.bounded_controls(raw, parameters), parameters
+        )
+
+    def normalised_minimization_target(self, normalised, parameters):
+        """Minimization target expressed in normalized feasible coordinates."""
+
+        score, objective, penalty = self.metrics_from_controls(
+            self.controls_from_normalised(normalised, parameters), parameters
+        )
+        return -score, (objective, penalty)
 
     def minimization_target(self, raw, parameters):
         """Negate the maximized score for gradient-based minimization."""

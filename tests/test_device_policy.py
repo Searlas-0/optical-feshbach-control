@@ -55,3 +55,13 @@ def test_every_slurm_launcher_disables_cuda_discovery():
         assert "export JAX_SKIP_CUDA_CONSTRAINTS_CHECK=1" in text, script
         assert "#SBATCH --gres" not in text, script
         assert "#SBATCH --gpus" not in text, script
+
+
+def test_generic_slurm_launcher_accepts_and_runs_one_config_path():
+    text = (ROOT / "slurm" / "run_config.slurm").read_text(encoding="utf-8")
+
+    assert 'CONFIG_PATH="$1"' in text
+    assert 'QUEUE_ID="${SLURM_ARRAY_JOB_ID:-${SLURM_JOB_ID}}"' in text
+    assert 'RUN_ARGUMENTS=(--queue-id "${QUEUE_ID}")' in text
+    assert '--batch-index "${SLURM_ARRAY_TASK_ID}"' in text
+    assert '"${CONFIG_PATH}"' in text
