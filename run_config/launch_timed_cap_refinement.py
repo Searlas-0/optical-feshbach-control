@@ -34,6 +34,16 @@ def _process_start(process_id: int) -> str | None:
     return fields[21] if len(fields) > 21 else None
 
 
+def _is_active_supervisor(process_id: int, expected_start: str | None) -> bool:
+    if expected_start is None or _process_start(process_id) != expected_start:
+        return False
+    try:
+        command = (Path("/proc") / str(process_id) / "cmdline").read_bytes()
+    except (FileNotFoundError, PermissionError, ProcessLookupError):
+        return False
+    return b"ofc.resilient_queue" in command
+
+
 def _manifest_paths() -> tuple[Path, ...]:
     paths = tuple(
         (ROOT / line.strip()).resolve()
@@ -53,7 +63,9 @@ def main(argv=None) -> int:
         parser.error("--hours must be positive")
     if STATE.exists():
         previous = json.loads(STATE.read_text(encoding="utf-8"))
-        if _process_start(int(previous["pid"])) == previous.get("process_start"):
+        if _is_active_supervisor(
+            int(previous["pid"]), previous.get("process_start")
+        ):
             raise RuntimeError(
                 f"Timed refinement PID {previous['pid']} is already running."
             )
