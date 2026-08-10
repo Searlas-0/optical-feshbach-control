@@ -79,6 +79,12 @@ def main(argv=None) -> int:
         command.extend(("--run", str(queue_id), str(path)))
 
     environment = os.environ.copy()
+    existing_pythonpath = environment.get("PYTHONPATH")
+    environment["PYTHONPATH"] = os.pathsep.join(
+        item
+        for item in (str(ROOT / "src"), existing_pythonpath)
+        if item
+    )
     environment["XLA_PYTHON_CLIENT_PREALLOCATE"] = "false"
     environment["XLA_PYTHON_CLIENT_MEM_FRACTION"] = "0.9"
     LOG.parent.mkdir(parents=True, exist_ok=True)
