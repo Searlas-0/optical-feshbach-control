@@ -1,15 +1,11 @@
-"""The standard three-figure view for completed optimization results.
+"""Unified sweep summaries for completed optimization results.
 
 Isolation boundary: plotting accepts already-retrieved result mappings and
 never opens a database, loads a config, or launches calculations.  The visual
-structure and styling mirror the old codebase's ``plot_run()`` output:
-convergence, yield distribution, and optimized control overlays.
-
-Every selection uses one colour-keyed sweep view. If no configuration
-parameter varies, initializations become a categorical, one-based numbered
-sweep. Figures 1 and 3 use the run with the highest regularized score at each
-sweep value, while Figure 2 scatters every matching result's objective recorded
-at its own best-score checkpoint against that value.
+Each sweep row contains the displayed runs' regularized-score histories and
+their median/spread, a molecular-objective strip on the same vertical scale,
+and the corresponding optimized control overlays.  If no configuration
+parameter varies, all selected initializations share one summary rectangle.
 """
 
 from __future__ import annotations
@@ -3087,6 +3083,124 @@ def _summary_best_by_sweep(runs, sweep):
     return _best_sweep_runs(runs, sweep)
 
 
+def _draw_summary_objective_strip(
+    axis,
+    runs,
+    best,
+    *,
+    colours=None,
+    compact=False,
+):
+    """Draw the shown runs' objective distribution beside their score history."""
+
+    finite = [
+        run for run in runs
+        if np.isfinite(run.get("best_objective", np.nan))
+    ]
+    if not finite:
+        axis.set_xticks([])
+        return {
+            "run_ids": (),
+            "values": (),
+            "best_run_id": None,
+            "percentile_10": math.nan,
+            "median": math.nan,
+            "percentile_90": math.nan,
+            "seed_spread": math.nan,
+        }
+
+    values = np.asarray([run["best_objective"] for run in finite], dtype=float)
+    positions = _jittered_strip_positions(0.0, len(finite))
+    point_colours = (
+        [colours[run["run_id"]] for run in finite]
+        if colours is not None
+        else ["#4f91b8"] * len(finite)
+    )
+    point_size = 13.0 if compact else 18.0
+    axis.scatter(
+        positions,
+        values,
+        s=point_size,
+        color=point_colours,
+        alpha=0.74,
+        linewidths=0.0,
+        zorder=3,
+    )
+    if best in finite:
+        best_index = finite.index(best)
+        axis.scatter(
+            [positions[best_index]],
+            [values[best_index]],
+            s=1.45 * point_size,
+            color=[point_colours[best_index]],
+            edgecolor="#202020",
+            linewidth=0.65,
+            zorder=5,
+        )
+
+    lower, median, upper = np.percentile(values, [10.0, 50.0, 90.0])
+    endpoint_half_width = 0.22
+    median_half_width = 0.12
+    axis.plot(
+        [0.0, 0.0],
+        [lower, upper],
+        color="#202020",
+        linewidth=0.9,
+        alpha=0.28,
+        solid_capstyle="round",
+        zorder=2,
+    )
+    for value in (lower, upper):
+        axis.plot(
+            [-endpoint_half_width, endpoint_half_width],
+            [value, value],
+            color="#202020",
+            linewidth=1.2,
+            alpha=0.28,
+            solid_capstyle="round",
+            zorder=2.1,
+        )
+    axis.plot(
+        [-median_half_width, median_half_width],
+        [median, median],
+        color="#202020",
+        linewidth=1.0,
+        alpha=0.34,
+        solid_capstyle="round",
+        zorder=2.2,
+    )
+    seed_spread = (
+        float((upper - lower) / abs(median))
+        if not math.isclose(float(median), 0.0)
+        else math.inf
+    )
+    axis.text(
+        0.5,
+        1.025,
+        rf"$S_J={_display_number(seed_spread, 5).strip('$')}$",
+        transform=axis.transAxes,
+        ha="center",
+        va="bottom",
+        fontsize=6.8 if compact else 7.6,
+        clip_on=False,
+    )
+    axis.set_xlim(-0.38, 0.38)
+    axis.set_xticks([])
+    axis.grid(axis="y", color="#d8d8d8", linewidth=0.4, alpha=0.35)
+    axis._plotted_run_ids = tuple(run["run_id"] for run in finite)
+    axis._objective_percentiles = (float(lower), float(median), float(upper))
+    axis._seed_spread = seed_spread
+    return {
+        "run_ids": axis._plotted_run_ids,
+        "values": tuple(float(value) for value in values),
+        "best_run_id": best["run_id"] if best in finite else None,
+        "percentile_10": float(lower),
+        "median": float(median),
+        "percentile_90": float(upper),
+        "seed_spread": seed_spread,
+    }
+
+
 def _summary_rectangle(
     figure,
     subplot_spec,
@@ -3103,13 +3217,14 @@ def _summary_rectangle(
     compact=False,
     show_step_axis=True,
     show_score_y=True,
+    show_objective_y=True,
     show_u_y=True,
     show_v_y=True,
     show_reference_ticks=True,
     colourbar_spec=None,
     show_colourbar_label=True,
 ):
-    """Draw one flush score/u/v rectangle and return its axes plus metadata."""
+    """Draw one flush score/objective-strip/u/v summary rectangle."""
 
     finite = [run for run in runs if np.isfinite(run.get("best_score", np.nan))]
     if not finite:
@@ -3134,15 +3249,29 @@ def _summary_rectangle(
     has_colourbar = colourbar_spec is not None
     inner = subplot_spec.subgridspec(
         3 if has_colourbar else 2,
-        2,
+        1,
         height_ratios=(1.18, 1.0, 0.12) if has_colourbar else (1.18, 1.0),
         hspace=0.0,
+    )
+    top = inner[0, 0].subgridspec(
+        1,
+        2,
+        width_ratios=(3.15, 1.0),
         wspace=0.0,
     )
-    score_axis = figure.add_subplot(inner[0, :])
-    u_axis = figure.add_subplot(inner[1, 0])
-    v_axis = figure.add_subplot(inner[1, 1])
-    colourbar_axis = figure.add_subplot(inner[2, :]) if has_colourbar else None
+    controls_grid = inner[1, 0].subgridspec(1, 2, wspace=0.0)
+    score_axis = figure.add_subplot(top[0, 0])
+    objective_axis = figure.add_subplot(top[0, 1], sharey=score_axis)
+    u_axis = figure.add_subplot(controls_grid[0, 0])
+    v_axis = figure.add_subplot(controls_grid[0, 1])
+    colourbar_axis = figure.add_subplot(inner[2, 0]) if has_colourbar else None
+
+    lower, median_history, upper = np.nanpercentile(
+        score_matrix, [10.0, 50.0, 90.0], axis=0
+    )
+    score_axis._median_history = np.asarray(median_history, dtype=float)
+    score_axis._spread_lower = np.asarray(lower, dtype=float)
+    score_axis._spread_upper = np.asarray(upper, dtype=float)
 
     if colours is None:
         for values in score_matrix:
@@ -3154,9 +3283,6 @@ def _summary_rectangle(
                 alpha=0.24,
                 zorder=1.8,
             )
-        lower, median_history, upper = np.nanpercentile(
-            score_matrix, [10.0, 50.0, 90.0], axis=0
-        )
         score_axis.fill_between(
             sample_steps,
             lower,
@@ -3180,6 +3306,23 @@ def _summary_rectangle(
             zorder=3,
         )
     else:
+        score_axis.fill_between(
+            sample_steps,
+            lower,
+            upper,
+            color="#9aa4aa",
+            alpha=0.16,
+            linewidth=0.0,
+            zorder=1.0,
+        )
+        score_axis.plot(
+            sample_steps,
+            median_history,
+            color="#30363a",
+            linewidth=0.72,
+            alpha=0.72,
+            zorder=1.3,
+        )
         for run, values in zip(finite, score_matrix):
             score_axis.plot(
                 sample_steps,
@@ -3188,6 +3331,19 @@ def _summary_rectangle(
                 linewidth=1.0 if run is best else 0.8,
                 alpha=1.0 if run is best else 0.82,
             )
+
+    shown_run_ids = tuple(run["run_id"] for run in finite)
+    score_axis._plotted_run_ids = shown_run_ids
+    score_axis._statistic_run_ids = shown_run_ids
+    score_axis._sample_steps = np.asarray(sample_steps, dtype=int)
+
+    objective_record = _draw_summary_objective_strip(
+        objective_axis,
+        finite,
+        best,
+        colours=colours,
+        compact=compact,
+    )
 
     _draw_schedule_change_lines(
         score_axis,
@@ -3213,6 +3369,23 @@ def _summary_rectangle(
         labelbottom=False,
         labelsize=6.2 if compact else 6.8,
     )
+    objective_axis.yaxis.tick_right()
+    objective_axis.yaxis.set_label_position("right")
+    objective_axis.tick_params(
+        axis="y",
+        labelright=True,
+        right=True,
+        labelleft=False,
+        left=False,
+        labelsize=6.2 if compact else 6.8,
+    )
+    objective_axis.set_ylabel(
+        r"$J_{\mathrm{mol}}$" if show_objective_y else "",
+        fontsize=7.6 if compact else 8.2,
+    )
+    objective_axis.spines["left"].set_visible(False)
+    score_axis.spines["right"].set_color("#777777")
+    score_axis.spines["right"].set_linewidth(0.6)
     score_axis.tick_params(
         axis="y",
         labelleft=True,
@@ -3242,7 +3415,7 @@ def _summary_rectangle(
         score_axis,
         finite,
         include_median=include_median_tick,
-        show_ticks=show_reference_ticks,
+        show_ticks=False,
     )
 
     for axis, name, label, show_y in (
@@ -3297,7 +3470,7 @@ def _summary_rectangle(
         colour_sweep, mappable, coordinates = colourbar_spec
         summary_colourbar = _add_sweep_colourbar(
             figure,
-            (score_axis, u_axis, v_axis),
+            (score_axis, objective_axis, u_axis, v_axis),
             colour_sweep,
             mappable,
             coordinates,
@@ -3316,6 +3489,8 @@ def _summary_rectangle(
         "run_ids": tuple(run["run_id"] for run in finite),
         "best_score": float(np.max(best_scores)),
         "median_best_score": float(np.median(best_scores)),
+        "score_statistic_run_ids": shown_run_ids,
+        "objective": objective_record,
         "u_cap": u_cap,
     }
     if show_stability_metadata:
@@ -3345,7 +3520,7 @@ def _summary_rectangle(
             ]
             control_records[name] = {"stable": int(sum(stable)), "total": len(stable)}
         record["controls"] = control_records
-    return (score_axis, u_axis, v_axis), record
+    return (score_axis, objective_axis, u_axis, v_axis), record
 
 
 def _validate_summary_arguments(runs, history_points, sweeps):
@@ -3367,6 +3542,40 @@ def _summary_entries(runs, sweep):
         for key, display_value in zip(sweep.keys, sweep.display_values)
         if any(np.isfinite(run.get("best_score", np.nan)) for run in groups[key])
     ]
+
+
+def plot_selection_summary(
+    runs,
+    *,
+    load_history,
+    load_tolerances,
+    load_controls,
+    history_points=1200,
+):
+    """Plot one summary rectangle for all runs in a non-parameter selection."""
+
+    runs = _validate_summary_arguments(runs, history_points, ())
+    plt, _, _, _, _, _, _, _ = _plot_modules()
+    figure = plt.figure(figsize=(11.2, 4.15), dpi=FIGURE_DPI)
+    outer = figure.add_gridspec(1, 1)
+    figure.subplots_adjust(left=0.09, right=0.91, bottom=0.08, top=0.93)
+    result = _summary_rectangle(
+        figure,
+        outer[0, 0],
+        runs,
+        load_history=load_history,
+        load_tolerances=load_tolerances,
+        load_controls=load_controls,
+        history_points=history_points,
+    )
+    if result is None:
+        raise ValueError("The selected runs contain no finite best scores.")
+    axes, record = result
+    figure._sweep_parameter = None
+    figure._summary_records = (record,)
+    figure._summary_axes = tuple(axes)
+    figure._summary_sweep_labels = ()
+    return figure
 
 
 def plot_single_sweep_summary(
@@ -3428,6 +3637,40 @@ def plot_single_sweep_summary(
     figure._summary_axes = tuple(axes)
     figure._summary_sweep_labels = tuple(sweep_labels)
     return figure
+
+
+def plot_standard_summary(
+    runs,
+    *,
+    sweep=None,
+    load_history=None,
+    load_tolerances=None,
+    load_controls=None,
+    history_points=1200,
+):
+    """Return the unified standard summary for retrieved runs only."""
+
+    runs = list(runs)
+    if not runs:
+        raise ValueError("At least one retrieved run is required for plotting.")
+    by_id = {run["run_id"]: run for run in runs}
+    load_history = load_history or (lambda run_id: by_id[run_id]["history"])
+    load_tolerances = load_tolerances or (
+        lambda run_id: by_id[run_id]["tolerances"]
+    )
+    load_controls = load_controls or (
+        lambda run_id: by_id[run_id]["controls"]["best"]
+    )
+    sweep = _detect_sweep(runs) if sweep is None else sweep
+    options = {
+        "load_history": load_history,
+        "load_tolerances": load_tolerances,
+        "load_controls": load_controls,
+        "history_points": history_points,
+    }
+    if sweep.name == INITIALIZATION_PARAMETER:
+        return plot_selection_summary(runs, **options)
+    return plot_single_sweep_summary(runs, sweep, **options)
 
 
 def plot_double_sweep_summary(
@@ -3578,6 +3821,7 @@ def plot_triple_sweep_summary(
                 compact=True,
                 show_step_axis=row_index == 0,
                 show_score_y=column_index == 0,
+                show_objective_y=column_index == column_count - 1,
                 show_u_y=column_index == 0,
                 show_v_y=column_index == column_count - 1,
                 show_reference_ticks=True,
@@ -3781,28 +4025,13 @@ def plot_controls(
 
 
 def plot_standard_figures(runs, *, sweep_parameter=None):
-    """Return one universal three-figure view for a parameter or initialization sweep."""
+    """Return the unified standard summary for a parameter or seed selection."""
 
     runs = list(runs)
     sweep = _detect_sweep(runs, sweep_parameter)
+    figure = plot_standard_summary(runs, sweep=sweep)
     return {
-        "convergence": plot_convergence(
-            runs,
-            sweep=sweep,
-            log_base_x=10,
-            log_base_y=2,
-            base_x=None,
-            base_y=None,
-        ),
-        "distribution": plot_yield_distribution(
-            runs,
-            sweep=sweep,
-            log_base_y=10,
-            base_y=None,
-            point_size=12.0,
-            line_alpha=0.22,
-        ),
-        "controls": plot_controls(runs, sweep=sweep),
+        "sweep_summary": (figure, figure._summary_axes),
     }
 
 
@@ -3814,7 +4043,7 @@ def save_standard_figures(
     close=True,
     sweep_parameter=None,
 ):
-    """Create and save the three standard figures with stable filenames."""
+    """Create and save the unified standard summary with a stable filename."""
 
     plt, _, _, _, _, _, _, _ = _plot_modules()
     output_dir = Path(output_dir).expanduser().resolve()

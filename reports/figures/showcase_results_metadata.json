@@ -1,0 +1,753 @@
+{
+  "generated_utc": "2026-08-10T02:27:18+00:00",
+  "objective_label": "dimensionless molecular objective J_m",
+  "plotted_quantity": "dimensional density proxy n_mol, dimensional cap Gamma_max and time t, plus the explicitly requested ratio Gamma/Gamma_max",
+  "dimensionalisation": {
+    "t_star_s": 1e-07,
+    "bohr_radius_m": 5.29177210903e-11,
+    "a_bg_m": -7.408480952642e-11,
+    "atom_mass_kg": 1.459707e-25,
+    "gamma_hz": 40000.0,
+    "g_2_initial_m^-6": 1.0,
+    "l_star_m": 8.499732053794345e-09,
+    "r_bg": -0.008716134703722568,
+    "molecular_density_per_objective_m^-3": 6.140669244906819e-25,
+    "frequency_convention": "gamma, Gamma, and nu are treated in the same Hz units; no 2*pi factor is introduced",
+    "g_2_convention": "unnormalised initial equal-position pair density, not dimensionless g^(2)(0)"
+  },
+  "baseline_source": {
+    "database": "results/results.sqlite3",
+    "config_name": "88_Sr_N_100_u_max_sweep",
+    "config_document_id": 1,
+    "queue_id": 696482,
+    "status": "complete",
+    "run_count": 450
+  },
+  "baseline_spread_method": {
+    "population": "all finite fixed-method runs at each cap",
+    "plotted_spread": "thin whisker from minimum to maximum",
+    "plotted_centre": "short thin line at the median",
+    "quartile_statistics": "q25 and q75 remain tabulated using numpy.quantile(method='linear') but are not drawn",
+    "outlined_point": "run with the maximum finite best_objective"
+  },
+  "baseline_statistics": {
+    "10": {
+      "run_count": 50,
+      "minimum": 18.10942240207598,
+      "q25": 18.109429923716597,
+      "median": 18.10943149605852,
+      "q75": 18.10943240107722,
+      "maximum": 18.10943414494549,
+      "molecular_density_m^-3": {
+        "minimum": 1.1120397318745456e-23,
+        "q25": 1.1120401937536176e-23,
+        "median": 1.1120402903059344e-23,
+        "q75": 1.1120403458801395e-23,
+        "maximum": 1.1120404529653218e-23
+      }
+    },
+    "20": {
+      "run_count": 50,
+      "minimum": 16.35258074002707,
+      "q25": 24.96223811515047,
+      "median": 26.962319191781866,
+      "q75": 37.63120362401087,
+      "maximum": 37.6312166913112,
+      "molecular_density_m^-3": {
+        "minimum": 1.0041578962513981e-23,
+        "q25": 1.5328484787774527e-23,
+        "median": 1.6556668423233578e-23,
+        "q75": 2.310807747427896e-23,
+        "maximum": 2.3108085498475884e-23
+      }
+    },
+    "40": {
+      "run_count": 50,
+      "minimum": 15.357594612112958,
+      "q25": 26.94355153541128,
+      "median": 39.972855569884544,
+      "q75": 43.51187881995304,
+      "maximum": 81.67603438720367,
+      "molecular_density_m^-3": {
+        "minimum": 9.430590891034871e-24,
+        "q25": 1.6545143826206194e-23,
+        "median": 2.4546008482909225e-23,
+        "q75": 2.6719205605779807e-23,
+        "maximum": 5.0154551240745336e-23
+      }
+    },
+    "80": {
+      "run_count": 50,
+      "minimum": 17.23527190109075,
+      "q25": 34.125455890076395,
+      "median": 53.92884332339385,
+      "q75": 59.68341080688936,
+      "maximum": 66.3491579897269,
+      "molecular_density_m^-3": {
+        "minimum": 1.0583610409063466e-23,
+        "q25": 2.0955313745261638e-23,
+        "median": 3.311591896093631e-23,
+        "q75": 3.664960851730048e-23,
+        "maximum": 4.0742823389297954e-23
+      }
+    },
+    "160": {
+      "run_count": 50,
+      "minimum": 18.37387809080318,
+      "q25": 48.45905102646484,
+      "median": 66.32209014753818,
+      "q75": 74.80182562788679,
+      "maximum": 496.47211405083806,
+      "molecular_density_m^-3": {
+        "minimum": 1.1282790810186232e-23,
+        "q25": 2.975710042755829e-23,
+        "median": 4.0726201922692527e-23,
+        "q75": 4.593332700960471e-23,
+        "maximum": 3.048671041705852e-22
+      }
+    },
+    "320": {
+      "run_count": 50,
+      "minimum": 25.31584067277703,
+      "q25": 49.872704087686216,
+      "median": 65.84102922459388,
+      "q75": 79.1133689145657,
+      "maximum": 1043.390895368587,
+      "molecular_density_m^-3": {
+        "minimum": 1.5545620422828306e-23,
+        "q25": 3.062517801515933e-23,
+        "median": 4.0430798321247475e-23,
+        "q75": 4.8580903135464074e-23,
+        "maximum": 6.407118381605671e-22
+      }
+    },
+    "640": {
+      "run_count": 50,
+      "minimum": 18.705827798244634,
+      "q25": 49.359213202286085,
+      "median": 70.81717685552113,
+      "q75": 87.66133745810431,
+      "maximum": 2240.140044568041,
+      "molecular_density_m^-3": {
+        "minimum": 1.1486630146120387e-23,
+        "q25": 3.030986024640768e-23,
+        "median": 4.348648599278256e-23,
+        "q75": 5.382992788963793e-23,
+        "maximum": 1.375595907596316e-21
+      }
+    },
+    "1280": {
+      "run_count": 50,
+      "minimum": 0.0010593730103825125,
+      "q25": 40.34563826304673,
+      "median": 75.6401913372623,
+      "q75": 109.59037111982913,
+      "maximum": 3153.536068153512,
+      "molecular_density_m^-3": {
+        "minimum": 6.5052592637402475e-28,
+        "q25": 2.4774922004802683e-23,
+        "median": 4.6448139662359376e-23,
+        "q75": 6.729582214734593e-23,
+        "maximum": 1.9364821946414647e-21
+      }
+    },
+    "2560": {
+      "run_count": 50,
+      "minimum": 0.0005280904822865447,
+      "q25": 0.0005630863318907228,
+      "median": 0.0005715077757876912,
+      "q75": 0.0005866043716914975,
+      "maximum": 0.0006166540781225479,
+      "molecular_density_m^-3": {
+        "minimum": 3.2428289831049945e-28,
+        "q25": 3.457726920468755e-28,
+        "median": 3.5094402220045777e-28,
+        "q75": 3.602143424173867e-28,
+        "maximum": 3.786668732273497e-28
+      }
+    }
+  },
+  "grid_refinement": {
+    "method": "linear interpolation of each plotted best fixed-method N=100 control followed by forward evaluation; no reoptimisation",
+    "N": [
+      100,
+      200,
+      400,
+      800
+    ],
+    "results": {
+      "10": {
+        "100": {
+          "objective": 18.10943414494549,
+          "molecular_density_m^-3": 1.1120404529653218e-23
+        },
+        "200": {
+          "objective": 18.117260937305506,
+          "molecular_density_m^-3": 1.1125210703966361e-23
+        },
+        "400": {
+          "objective": 18.11980648572108,
+          "molecular_density_m^-3": 1.1126773841053056e-23
+        },
+        "800": {
+          "objective": 18.12064897873407,
+          "molecular_density_m^-3": 1.1127291188146447e-23
+        }
+      },
+      "20": {
+        "100": {
+          "objective": 37.6312166913112,
+          "molecular_density_m^-3": 2.3108085498475884e-23
+        },
+        "200": {
+          "objective": 37.66592219843097,
+          "molecular_density_m^-3": 2.312939700249581e-23
+        },
+        "400": {
+          "objective": 37.67867127083949,
+          "molecular_density_m^-3": 2.313722578617982e-23
+        },
+        "800": {
+          "objective": 37.68330264804602,
+          "molecular_density_m^-3": 2.314006976173719e-23
+        }
+      },
+      "40": {
+        "100": {
+          "objective": 81.67603438720369,
+          "molecular_density_m^-3": 5.015455124074535e-23
+        },
+        "200": {
+          "objective": 81.84518456918617,
+          "molecular_density_m^-3": 5.025842077277237e-23
+        },
+        "400": {
+          "objective": 81.91041731778938,
+          "molecular_density_m^-3": 5.029847804608322e-23
+        },
+        "800": {
+          "objective": 81.9345752021659,
+          "molecular_density_m^-3": 5.0313312603844506e-23
+        }
+      },
+      "80": {
+        "100": {
+          "objective": 66.34915798972692,
+          "molecular_density_m^-3": 4.0742823389297966e-23
+        },
+        "200": {
+          "objective": 66.39637297992198,
+          "molecular_density_m^-3": 4.07718165531169e-23
+        },
+        "400": {
+          "objective": 66.50667449539387,
+          "molecular_density_m^-3": 4.0839549065489384e-23
+        },
+        "800": {
+          "objective": 66.56081197762907,
+          "molecular_density_m^-3": 4.087279310270523e-23
+        }
+      },
+      "160": {
+        "100": {
+          "objective": 496.47211405083794,
+          "molecular_density_m^-3": 3.0486710417058515e-22
+        },
+        "200": {
+          "objective": 499.26650957609286,
+          "molecular_density_m^-3": 3.0658305003658893e-22
+        },
+        "400": {
+          "objective": 500.29650845044955,
+          "molecular_density_m^-3": 3.07215538277594e-22
+        },
+        "800": {
+          "objective": 500.66380766427676,
+          "molecular_density_m^-3": 3.0744108457619675e-22
+        }
+      },
+      "320": {
+        "100": {
+          "objective": 1043.3908953685873,
+          "molecular_density_m^-3": 6.407118381605673e-22
+        },
+        "200": {
+          "objective": 1042.530039358402,
+          "molecular_density_m^-3": 6.401832149579636e-22
+        },
+        "400": {
+          "objective": 1042.7707583633407,
+          "molecular_density_m^-3": 6.403310325369927e-22
+        },
+        "800": {
+          "objective": 1049.111448413162,
+          "molecular_density_m^-3": 6.44224640575035e-22
+        }
+      },
+      "640": {
+        "100": {
+          "objective": 2240.14004456804,
+          "molecular_density_m^-3": 1.3755959075963155e-21
+        },
+        "200": {
+          "objective": 2277.3627573770477,
+          "molecular_density_m^-3": 1.3984531443721428e-21
+        },
+        "400": {
+          "objective": 2290.5104986686015,
+          "molecular_density_m^-3": 1.4065267374310463e-21
+        },
+        "800": {
+          "objective": 2295.008804728179,
+          "molecular_density_m^-3": 1.4092889983984687e-21
+        }
+      },
+      "1280": {
+        "100": {
+          "objective": 3153.5360681535108,
+          "molecular_density_m^-3": 1.936482194641464e-21
+        },
+        "200": {
+          "objective": 3186.898707626863,
+          "molecular_density_m^-3": 1.9569690880557567e-21
+        },
+        "400": {
+          "objective": 3198.92876440376,
+          "molecular_density_m^-3": 1.964356348022194e-21
+        },
+        "800": {
+          "objective": 3203.1825321055617,
+          "molecular_density_m^-3": 1.966968446072337e-21
+        }
+      },
+      "2560": {
+        "100": {
+          "objective": 0.0006166540781225479,
+          "molecular_density_m^-3": 3.786668732273497e-28
+        },
+        "200": {
+          "objective": 0.0006166540732472438,
+          "molecular_density_m^-3": 3.786668702335867e-28
+        },
+        "400": {
+          "objective": 0.0006166540718641037,
+          "molecular_density_m^-3": 3.7866686938424606e-28
+        },
+        "800": {
+          "objective": 0.0006166540714602063,
+          "molecular_density_m^-3": 3.7866686913622605e-28
+        }
+      }
+    }
+  },
+  "targeted_grid_refinement": {
+    "method": "linear interpolation of the separately targeted N=100 controls followed by forward evaluation; no reoptimisation",
+    "N": [
+      100,
+      200,
+      400,
+      800
+    ],
+    "results": {
+      "40": {
+        "100": {
+          "objective": 81.67830740832402,
+          "molecular_density_m^-3": 5.015594702783401e-23
+        },
+        "200": {
+          "objective": 81.84846062005403,
+          "molecular_density_m^-3": 5.0260432487253267e-23
+        },
+        "400": {
+          "objective": 81.91411658927389,
+          "molecular_density_m^-3": 5.0300749646346567e-23
+        },
+        "800": {
+          "objective": 81.9384388140229,
+          "molecular_density_m^-3": 5.0315685120094963e-23
+        }
+      },
+      "320": {
+        "100": {
+          "objective": 947.0562405974023,
+          "molecular_density_m^-3": 5.815559129833541e-22
+        },
+        "200": {
+          "objective": 960.9302410771755,
+          "molecular_density_m^-3": 5.900754777883508e-22
+        },
+        "400": {
+          "objective": 966.2195325473887,
+          "molecular_density_m^-3": 5.933234567341993e-22
+        },
+        "800": {
+          "objective": 969.7819421635795,
+          "molecular_density_m^-3": 5.955110146509896e-22
+        }
+      },
+      "1280": {
+        "100": {
+          "objective": 8703.297342822994,
+          "molecular_density_m^-3": 5.3444070322352405e-21
+        },
+        "200": {
+          "objective": 8413.967041999018,
+          "molecular_density_m^-3": 5.166738864246297e-21
+        },
+        "400": {
+          "objective": 8224.727217313513,
+          "molecular_density_m^-3": 5.050532947110514e-21
+        },
+        "800": {
+          "objective": 8231.065936379035,
+          "molecular_density_m^-3": 5.0544253448322884e-21
+        }
+      }
+    }
+  },
+  "plotted_control_results": {
+    "10": {
+      "regime": "tight",
+      "colour": "#440154",
+      "database": "results/results.sqlite3",
+      "run_id": 484,
+      "config_name": "88_Sr_N_100_u_max_sweep",
+      "config_document_id": 1,
+      "queue_id": 696482,
+      "selection": "maximum finite best_objective at this cap",
+      "best_score": 18.109374272186326,
+      "best_objective": 18.10943414494549,
+      "best_density_proxy_m^-3": 1.1120404529653218e-23,
+      "N": 100,
+      "grid_refinement": {
+        "refined_N": 199,
+        "relative_error": 0.0004296374585492365,
+        "tolerance": 0.01,
+        "passed": true
+      },
+      "terminal_stability_ratios": {
+        "epsilon_J_over_J_tol": 1.6978839244659554,
+        "epsilon_u_over_u_tol": 0.830725438741247,
+        "epsilon_v_over_v_tol": 1.9090045897316819
+      },
+      "dimensional_control_derivatives": {
+        "max_abs_dGamma_dt_MHz_per_us": 2.547384330142677e-06,
+        "max_abs_dnu_dt_MHz_per_us": 2.5479623778654314,
+        "max_abs_d2Gamma_dt2_MHz_per_us2": 0.0005486154641687334,
+        "max_abs_d2nu_dt2_MHz_per_us2": 674.9843301194501
+      }
+    },
+    "20": {
+      "regime": "tight",
+      "colour": "#472D7B",
+      "database": "results/results.sqlite3",
+      "run_id": 539,
+      "config_name": "88_Sr_N_100_u_max_sweep",
+      "config_document_id": 1,
+      "queue_id": 696482,
+      "selection": "maximum finite best_objective at this cap",
+      "best_score": 37.630675420470794,
+      "best_objective": 37.6312166913112,
+      "best_density_proxy_m^-3": 2.3108085498475884e-23,
+      "N": 100,
+      "grid_refinement": {
+        "refined_N": 199,
+        "relative_error": 0.0009164667696490913,
+        "tolerance": 0.01,
+        "passed": true
+      },
+      "terminal_stability_ratios": {
+        "epsilon_J_over_J_tol": 3.846043423335761,
+        "epsilon_u_over_u_tol": 2.4738949351590684,
+        "epsilon_v_over_v_tol": 0.6340838110568561
+      },
+      "dimensional_control_derivatives": {
+        "max_abs_dGamma_dt_MHz_per_us": 7.201621061881447,
+        "max_abs_dnu_dt_MHz_per_us": 8.232313102704936,
+        "max_abs_d2Gamma_dt2_MHz_per_us2": 982.4536142197446,
+        "max_abs_d2nu_dt2_MHz_per_us2": 1094.449683230163
+      }
+    },
+    "40": {
+      "regime": "tight",
+      "colour": "#3B528B",
+      "database": "results/results.sqlite3",
+      "run_id": 577,
+      "config_name": "88_Sr_N_100_u_max_sweep",
+      "config_document_id": 1,
+      "queue_id": 696482,
+      "selection": "maximum finite best_objective at this cap",
+      "best_score": 81.65047967340706,
+      "best_objective": 81.67603438720367,
+      "best_density_proxy_m^-3": 5.0154551240745336e-23,
+      "N": 100,
+      "grid_refinement": {
+        "refined_N": 199,
+        "relative_error": 0.002054808958019014,
+        "tolerance": 0.01,
+        "passed": true
+      },
+      "terminal_stability_ratios": {
+        "epsilon_J_over_J_tol": 9.24412969350792,
+        "epsilon_u_over_u_tol": 4.350085665745643,
+        "epsilon_v_over_v_tol": 0.8391914655718329
+      },
+      "dimensional_control_derivatives": {
+        "max_abs_dGamma_dt_MHz_per_us": 72.34979149392021,
+        "max_abs_dnu_dt_MHz_per_us": 71.30928710311532,
+        "max_abs_d2Gamma_dt2_MHz_per_us2": 6178.660318999566,
+        "max_abs_d2nu_dt2_MHz_per_us2": 6097.0051489761245
+      }
+    },
+    "80": {
+      "regime": "tight",
+      "colour": "#2C728E",
+      "database": "results/results.sqlite3",
+      "run_id": 634,
+      "config_name": "88_Sr_N_100_u_max_sweep",
+      "config_document_id": 1,
+      "queue_id": 696482,
+      "selection": "maximum finite best_objective at this cap",
+      "best_score": 66.09847698167479,
+      "best_objective": 66.3491579897269,
+      "best_density_proxy_m^-3": 4.0742823389297954e-23,
+      "N": 100,
+      "grid_refinement": {
+        "refined_N": 199,
+        "relative_error": 0.0004358623081081744,
+        "tolerance": 0.01,
+        "passed": true
+      },
+      "terminal_stability_ratios": {
+        "epsilon_J_over_J_tol": 1.7287419634960952,
+        "epsilon_u_over_u_tol": 3.9977136202744306,
+        "epsilon_v_over_v_tol": 0.07403194453491121
+      },
+      "dimensional_control_derivatives": {
+        "max_abs_dGamma_dt_MHz_per_us": 166.50878092461193,
+        "max_abs_dnu_dt_MHz_per_us": 239.0755012320229,
+        "max_abs_d2Gamma_dt2_MHz_per_us2": 11635.978924395205,
+        "max_abs_d2nu_dt2_MHz_per_us2": 21677.35819239208
+      }
+    },
+    "160": {
+      "regime": "tight",
+      "colour": "#21918C",
+      "database": "results/results.sqlite3",
+      "run_id": 676,
+      "config_name": "88_Sr_N_100_u_max_sweep",
+      "config_document_id": 1,
+      "queue_id": 696482,
+      "selection": "maximum finite best_objective at this cap",
+      "best_score": 496.38733651381085,
+      "best_objective": 496.47211405083806,
+      "best_density_proxy_m^-3": 3.048671041705852e-22,
+      "N": 100,
+      "grid_refinement": {
+        "refined_N": 199,
+        "relative_error": 0.0055702136163875305,
+        "tolerance": 0.01,
+        "passed": true
+      },
+      "terminal_stability_ratios": {
+        "epsilon_J_over_J_tol": 65.2114365690596,
+        "epsilon_u_over_u_tol": 4.135570082086331,
+        "epsilon_v_over_v_tol": 0.5876035809639631
+      },
+      "dimensional_control_derivatives": {
+        "max_abs_dGamma_dt_MHz_per_us": 136.87230619149858,
+        "max_abs_dnu_dt_MHz_per_us": 135.68995937792295,
+        "max_abs_d2Gamma_dt2_MHz_per_us2": 6216.242856527251,
+        "max_abs_d2nu_dt2_MHz_per_us2": 6187.615986895086
+      }
+    },
+    "320": {
+      "regime": "crossover",
+      "colour": "#28AE80",
+      "database": "results/results.sqlite3",
+      "run_id": 704,
+      "config_name": "88_Sr_N_100_u_max_sweep",
+      "config_document_id": 1,
+      "queue_id": 696482,
+      "selection": "maximum finite best_objective at this cap",
+      "best_score": 1038.0562649357794,
+      "best_objective": 1043.390895368587,
+      "best_density_proxy_m^-3": 6.407118381605671e-22,
+      "N": 100,
+      "grid_refinement": {
+        "refined_N": 199,
+        "relative_error": 0.01042139036590902,
+        "tolerance": 0.01,
+        "passed": false
+      },
+      "terminal_stability_ratios": {
+        "epsilon_J_over_J_tol": 294.9208979928393,
+        "epsilon_u_over_u_tol": 2.99597552745205,
+        "epsilon_v_over_v_tol": 1.281018272193923
+      },
+      "dimensional_control_derivatives": {
+        "max_abs_dGamma_dt_MHz_per_us": 600.8337899453335,
+        "max_abs_dnu_dt_MHz_per_us": 647.1149924973236,
+        "max_abs_d2Gamma_dt2_MHz_per_us2": 65533.152486095925,
+        "max_abs_d2nu_dt2_MHz_per_us2": 112883.54563404444
+      }
+    },
+    "640": {
+      "regime": "crossover",
+      "colour": "#5EC962",
+      "database": "results/results.sqlite3",
+      "run_id": 785,
+      "config_name": "88_Sr_N_100_u_max_sweep",
+      "config_document_id": 1,
+      "queue_id": 696482,
+      "selection": "maximum finite best_objective at this cap",
+      "best_score": 2232.9868132969423,
+      "best_objective": 2240.140044568041,
+      "best_density_proxy_m^-3": 1.375595907596316e-21,
+      "N": 100,
+      "grid_refinement": {
+        "refined_N": 199,
+        "relative_error": 0.01860666044747576,
+        "tolerance": 0.01,
+        "passed": false
+      },
+      "terminal_stability_ratios": {
+        "epsilon_J_over_J_tol": 1117.7915365150711,
+        "epsilon_u_over_u_tol": 16.864294681665957,
+        "epsilon_v_over_v_tol": 2.7551893718408644
+      },
+      "dimensional_control_derivatives": {
+        "max_abs_dGamma_dt_MHz_per_us": 615.9569350978161,
+        "max_abs_dnu_dt_MHz_per_us": 613.9298144377267,
+        "max_abs_d2Gamma_dt2_MHz_per_us2": 129769.89828980663,
+        "max_abs_d2nu_dt2_MHz_per_us2": 129602.53688091418
+      }
+    },
+    "1280": {
+      "regime": "loose",
+      "colour": "#ADDC30",
+      "database": "results/results.sqlite3",
+      "run_id": 835,
+      "config_name": "88_Sr_N_100_u_max_sweep",
+      "config_document_id": 1,
+      "queue_id": 696482,
+      "selection": "maximum finite best_objective at this cap",
+      "best_score": 3152.2764659135655,
+      "best_objective": 3153.536068153512,
+      "best_density_proxy_m^-3": 1.9364821946414647e-21,
+      "N": 100,
+      "grid_refinement": {
+        "refined_N": 199,
+        "relative_error": 0.01042287286844305,
+        "tolerance": 0.01,
+        "passed": false
+      },
+      "terminal_stability_ratios": {
+        "epsilon_J_over_J_tol": 715.8778634009013,
+        "epsilon_u_over_u_tol": 3.792688944899811,
+        "epsilon_v_over_v_tol": 4.512982561318615
+      },
+      "dimensional_control_derivatives": {
+        "max_abs_dGamma_dt_MHz_per_us": 611.581807641204,
+        "max_abs_dnu_dt_MHz_per_us": 572.8148389155643,
+        "max_abs_d2Gamma_dt2_MHz_per_us2": 17872.44856718871,
+        "max_abs_d2nu_dt2_MHz_per_us2": 17941.532737614518
+      }
+    },
+    "2560": {
+      "regime": "loose",
+      "colour": "#E4C91A",
+      "database": "results/results.sqlite3",
+      "run_id": 892,
+      "config_name": "88_Sr_N_100_u_max_sweep",
+      "config_document_id": 1,
+      "queue_id": 696482,
+      "selection": "maximum finite best_objective at this cap",
+      "best_score": 0.0006083619306740869,
+      "best_objective": 0.0006166540781225479,
+      "best_density_proxy_m^-3": 3.786668732273497e-28,
+      "N": 100,
+      "grid_refinement": {
+        "refined_N": 199,
+        "relative_error": 8.50173421553528e-09,
+        "tolerance": 0.01,
+        "passed": true
+      },
+      "terminal_stability_ratios": {
+        "epsilon_J_over_J_tol": 7079.803081698194,
+        "epsilon_u_over_u_tol": 0.07865212663503626,
+        "epsilon_v_over_v_tol": 1.4140028778888294
+      },
+      "dimensional_control_derivatives": {
+        "max_abs_dGamma_dt_MHz_per_us": 0.7716264653004146,
+        "max_abs_dnu_dt_MHz_per_us": 0.7269459517809551,
+        "max_abs_d2Gamma_dt2_MHz_per_us2": 18.49294985106553,
+        "max_abs_d2nu_dt2_MHz_per_us2": 17.020946745249784
+      }
+    }
+  },
+  "target_results": {
+    "40": {
+      "database": "results/slurm_isolated/N100_u40_top_peak_refinement_strict.sqlite3",
+      "run_id": 82737,
+      "config_name": "N100_u40_lbfgs_handoff_cpu",
+      "config_document_id": 46,
+      "queue_id": 703503,
+      "status": "complete",
+      "termination_reason": "stability",
+      "best_objective": 81.67830740841916,
+      "molecular_density_m^-3": 5.0155947027892433e-23,
+      "Gamma_max_hz": 1600000.0,
+      "time_horizon_s": 4e-07,
+      "best_score": 81.65440167832908,
+      "best_penalty": 0.023905730090086324,
+      "completed_steps": 150,
+      "strict_status_counts": {
+        "running": 5
+      },
+      "strict_termination_counts": {
+        "None": 5
+      }
+    },
+    "320": {
+      "database": "results/bar_u320_crossover_screen.sqlite3",
+      "run_id": 501,
+      "config_name": "N100_u320_fixed_parameter_seed250_top20_loose_gpu",
+      "config_document_id": 3,
+      "queue_id": 2929830628051672910,
+      "status": "complete",
+      "termination_reason": "time_limit",
+      "best_objective": 947.0562405991521,
+      "molecular_density_m^-3": 5.815559129844286e-22,
+      "Gamma_max_hz": 12800000.0,
+      "time_horizon_s": 4e-07,
+      "best_score": 946.8414989962297,
+      "best_penalty": 0.2147416029225117,
+      "completed_steps": 1250,
+      "strict_status_counts": {},
+      "strict_termination_counts": {}
+    },
+    "1280": {
+      "database": "results/slurm_isolated/N100_u1280_top_peak_refinement_strict.sqlite3",
+      "run_id": 86294,
+      "config_name": "N100_u1280_top_peak_refinement_strict_slurm_isolated_cpu",
+      "config_document_id": 50,
+      "queue_id": 703316,
+      "status": "complete",
+      "termination_reason": "time_limit",
+      "best_objective": 8703.297342837639,
+      "molecular_density_m^-3": 5.344407032244233e-21,
+      "Gamma_max_hz": 51200000.0,
+      "time_horizon_s": 4e-07,
+      "best_score": 8594.915998616238,
+      "best_penalty": 108.38134422140126,
+      "completed_steps": 10605750,
+      "strict_status_counts": {
+        "complete": 5
+      },
+      "strict_termination_counts": {
+        "time_limit": 5
+      }
+    }
+  }
+}

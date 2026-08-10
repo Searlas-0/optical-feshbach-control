@@ -5,7 +5,7 @@
 %%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%%
 
 \documentclass[9pt,a4paper,twocolumn,twoside]{rho-class/rho}
-\usepackage[english]{babel}
+\usepackage[british]{babel}
 \usepackage{amsmath}
 
 %----------------------------------------------------------
@@ -42,6 +42,42 @@
 \newcommand{\dd}{\mathrm{d}}
 \newcommand{\ii}{\mathrm{i}}
 
+% The showcase generator resolves each displayed result to an immutable
+% config-document/queue pair and writes these macros with the figure.  Keep
+% fallbacks so that the report still compiles before figures are regenerated.
+\IfFileExists{figures/showcase_results_macros.tex}{%
+    \input{figures/showcase_results_macros.tex}%
+}{%
+    \newcommand{\ShowcaseSweepRuns}{450}%
+    \newcommand{\ShowcaseSweepCaps}{9}%
+    \newcommand{\ShowcaseStartsPerCap}{50}%
+    \newcommand{\ShowcaseDisplayedRuns}{450}%
+    \newcommand{\ShowcaseDisplayedCaps}{9}%
+    \newcommand{\ShowcaseFortyObjective}{81.68}%
+    \newcommand{\ShowcaseThreeTwentyObjective}{947.1}%
+    \newcommand{\ShowcaseTwelveEightyObjective}{provisional}%
+    \newcommand{\ShowcaseFortyDensityScaled}{0.0502}%
+    \newcommand{\ShowcaseThreeTwentyDensityScaled}{0.582}%
+    \newcommand{\ShowcaseTwelveEightyDensityScaled}{provisional}%
+    \newcommand{\ShowcaseLengthScaleNm}{8.4997}%
+    \newcommand{\ShowcasePhysicalHorizonMicroseconds}{0.4}%
+    \newcommand{\ShowcaseFortyCapMHz}{1.6}%
+    \newcommand{\ShowcaseThreeTwentyCapMHz}{12.8}%
+    \newcommand{\ShowcaseTwelveEightyCapMHz}{51.2}%
+    \newcommand{\ShowcaseHighCapSteps}{unfinished}%
+    \newcommand{\ShowcaseStrictComplete}{0/15}%
+    \newcommand{\ShowcaseBaselineTwelveEightyMedian}{75.64}%
+    \newcommand{\ShowcaseBaselineTwelveEightyBest}{3,154}%
+    \newcommand{\ShowcaseBaselineThreeTwentyMedian}{19.83}%
+    \newcommand{\ShowcaseBaselineThreeTwentyBest}{1,043}%
+    \newcommand{\ShowcaseBaselineTwentyFiveSixtyMedian}{0.000572}%
+    \newcommand{\ShowcaseBaselineTwelveEightyMedianDensityScaled}{0.0464}%
+    \newcommand{\ShowcaseBaselineTwelveEightyBestDensityScaled}{1.94}%
+    \newcommand{\ShowcaseBaselineTwentyFiveSixtyMedianDensityScaled}{3.51\times10^{-7}}%
+    \newcommand{\ShowcaseBaselineTwentyFiveSixtyMedianDensity}{3.51\times10^{-28}}%
+    \newcommand{\ShowcaseSnapshotDate}{9 August 2026}%
+}
+
 %----------------------------------------------------------
 % Showcase-page styling
 %----------------------------------------------------------
@@ -62,6 +98,11 @@
 \newcommand{\showcasesubheading}[1]{%
     {\color{showcasenavy}\sffamily\bfseries\fontsize{11}{13}\selectfont #1\par}%
     \vspace{1.2mm}%
+}
+
+\newcommand{\showcasecardheading}[1]{%
+    {\color{showcasenavy}\sffamily\bfseries\fontsize{12}{14}\selectfont #1\par}%
+    \vspace{1mm}%
 }
 
 \tcbset{
@@ -121,7 +162,7 @@
 %----------------------------------------------------------
 
 \begin{abstract}
-    Optical Feshbach resonances provide a fast, species-flexible means of controlling ultracold interactions, but the same optical coupling that changes the real scattering length also opens an inelastic molecular channel. This report develops a numerical optimal-control framework for maximizing the molecular yield accumulated over a fixed time while respecting a finite laser-intensity budget. The physical controls are the dimensionless stimulated linewidth and detuning, which jointly determine a complex scattering length. Their history drives a universal short-time pair amplitude through a half-order Volterra equation, and the loss--contact relation converts that amplitude into a molecular production rate. The resulting constrained objective is optimized with automatically differentiated, GRAPE-style piecewise controls and translated to the $689$-nm $^1S_0$--$^3P_1$ optical Feshbach resonance of bosonic $^{88}\mathrm{Sr}$. The archived $N=100$ multi-start result shown here is provisional; the absolute yield normalization, time-grid convergence, cap sweep, and laboratory prescription remain to be validated.
+    Optical Feshbach resonances couple an ultracold entrance channel to a decaying molecular state, so laser intensity and detuning jointly control both dispersive interactions and inelastic conversion. We formulate this as a bounded optimal-control problem: the laser determines a complex scattering length, a half-order Volterra equation propagates the history-dependent pair amplitude, and the loss--contact relation defines a dimensionless accumulated molecular objective. Automatic differentiation through this nonlocal dynamics permits multi-start optimisation of the complete intensity and detuning histories. A completed $N=100$ campaign contains \ShowcaseSweepRuns{} runs over \ShowcaseSweepCaps{} intensity caps, with \ShowcaseStartsPerCap{} starts per cap; the showcase displays every seed at every cap. Later searches give a stable saved value near $\Jmol=\ShowcaseFortyObjective$ at cap 40 and a time-limited selected endpoint $\Jmol=\ShowcaseThreeTwentyObjective$ at cap 320. At cap 1280, however, the objective continues to grow through increasingly grid-scale controls. The current calculation therefore establishes a power- and methodology-sensitive numerical landscape, not a converged high-power optimum or absolute molecule yield. Kernel normalisation, initialisation, time-grid convergence, the reduced optical map, and the experimental counting prefactor remain explicit validation requirements.
 \end{abstract}
 
 \keywords{optical Feshbach resonance, ultracold quantum gas, Tan contact, molecular formation, optimal control, Volterra equation, JAX}
@@ -136,6 +177,7 @@
 
 \newgeometry{left=1.15cm,right=1.15cm,top=0.9cm,bottom=0.9cm}
 \onecolumn
+\raggedbottom
 \pagestyle{showcasestyle}
 \thispagestyle{showcasestyle}
 
@@ -147,120 +189,110 @@
     arc=4pt,
     left=7mm,
     right=7mm,
-    top=5mm,
-    bottom=5mm
+    top=4mm,
+    bottom=4mm
 ]
     {\color{showcasecyan!65!white}\sffamily\bfseries\fontsize{9}{11}\selectfont
     CUHK SUMMER UNDERGRADUATE RESEARCH PROGRAMME \hfill RESEARCH SHOWCASE}
 
     \vspace{2mm}
-    {\color{white}\sffamily\bfseries\fontsize{27}{30}\selectfont
-    Shaping quantum collisions with light\par}
+    {\color{white}\sffamily\bfseries\fontsize{25}{28}\selectfont
+    Laser-constrained control of\par molecular formation\par}
     \vspace{1mm}
     {\color{white!90}\sffamily\fontsize{14}{17}\selectfont
-    Optimal laser control of molecule formation through an optical Feshbach resonance\par}
+    A history-dependent two-channel optimisation through an optical Feshbach resonance\par}
     \vspace{3mm}
     {\color{white}\sffamily\fontsize{9}{11}\selectfont
     \textbf{Charlie Mullen} \enspace|\enspace Supervisor: Prof. Yangqian Yan
     \hfill Department of Physics, The Chinese University of Hong Kong}
 \end{tcolorbox}
 
-\vspace{3mm}
-\begin{tcolorbox}[showcasebox,colback=showcasegold!12,colframe=showcasegold]
+\vspace{2mm}
+\begin{tcolorbox}[showcasebox,colback=showcasegold!12,colframe=showcasegold,top=1.5mm,bottom=1.5mm]
     \begin{minipage}[c]{0.17\textwidth}
         {\color{showcasegold!75!black}\sffamily\bfseries\fontsize{11}{13}\selectfont
         \mbox{THE QUESTION}}
     \end{minipage}\hfill
     \begin{minipage}[c]{0.79\textwidth}
-        {\color{showcaseink}\sffamily\bfseries\fontsize{14}{17}\selectfont
-        Can a laser assemble molecules from an ultracold gas without simply destroying the atoms?}
+        {\color{showcaseink}\sffamily\bfseries\fontsize{11.8}{14.5}\selectfont
+        How do physical laser constraint and power cost limits affect maximum molecular yield, and how robust is our optimised yield calculation?}
     \end{minipage}
 \end{tcolorbox}
 
-\vspace{3mm}
+\vspace{2mm}
 \begin{minipage}[t]{0.385\textwidth}
     \vspace{0pt}
-    \showcaseheading{The problem in plain language}
-    {\sffamily\fontsize{10.2}{13.1}\selectfont
-    At a few billionths of a degree above absolute zero, atoms behave as coherent matter waves. A laser tuned near a molecular resonance can change how two waves scatter---and can briefly couple an atom pair to a molecular state.
+    \showcaseheading{Physical control problem}
+    {\sffamily\fontsize{9.4}{11.7}\selectfont
+    An optical Feshbach resonance is a laser-induced resonance between two colliding atoms in an open scattering channel and an optically excited molecular bound state in a closed channel. In the photon-dressed energy picture, the molecule and an absorbed laser photon are treated as one combined state. Changing the laser frequency then moves its effective bound-state energy $E_c$ relative to the open-channel scattering energy $E$. Strong resonance requires $E_c-E\approx0$; for ultralow threshold collisions $E\approx0$, so resonance requires $E_c\approx0$.
 
-    \vspace{2.2mm}
-    That opportunity comes with a cost: the excited molecule can decay. The useful interaction and the unwanted loss are two parts of the same \emph{complex scattering length}. Turning the intensity up does not provide an independent ``molecule knob.''
+    \vspace{1.5mm}
+    Once the channels are near resonance, detuning $\nu$ controls the remaining energy mismatch, while laser intensity sets the channel coupling $W(I)$ and stimulated width $\Gamma\propto|W|^2$. Because the excited molecule decays at rate $\gamma$, the resonance produces a \emph{complex} scattering length: the dispersive interaction and inelastic molecular flux are linked responses, not independent controls.
 
-    \vspace{2.2mm}
-    The gas also remembers. The rate at one instant depends on pair correlations built by the entire earlier pulse, so the best control is a time sequence rather than one fixed laser setting.}
+    \vspace{1.5mm}
+    The conversion rate is also nonlocal in time. A short-range pair amplitude $\eta(t)$ retains the complete earlier scattering history, so optimising a constant laser setting is not equivalent to optimising a pulse.}
 
-    \vspace{3mm}
-    \begin{tcolorbox}[showcasecard,colframe=showcasered!65,colback=showcasered!5]
-        \showcasesubheading{The central trade-off}
-        {\sffamily\fontsize{9.2}{11.6}\selectfont
-        Detuning from resonance reduces decay, but also weakens the interaction. Intensity strengthens both. The optimization must decide \textbf{when to build correlations} and \textbf{when to convert them into products}.}
+    \vspace{2mm}
+    \begin{tcolorbox}[showcasecard,colframe=showcasered!65,colback=showcasered!5,top=1.5mm,bottom=1.5mm]
+        \showcasesubheading{Coupling--loss constraint}
+        {\sffamily\fontsize{8.6}{10.7}\selectfont
+        Near resonance, the closed-channel fraction scales approximately as
+        \[
+            |b|^2\propto
+            \frac{|W(I)|^2}{(E-E_c)^2+(\hbar\gamma/2)^2}.
+        \]
+        Detuning suppresses both admixture and decay; intensity strengthens both. The useful operating path must therefore be found dynamically.}
+    \end{tcolorbox}
+
+    \vspace{1.5mm}
+    \begin{tcolorbox}[showcasecard,colframe=showcaseblue!65,colback=showcaseblue!5,top=1.5mm,bottom=1.5mm]
+        \showcasesubheading{Physical reference: $^{88}\mathrm{Sr}$}
+        {\sffamily\fontsize{8.2}{10.1}\selectfont
+        The $689\,\mathrm{nm}$ $^1S_0$--$^3P_1$ line gives
+        $a_{\rm bg}=-1.4(6)a_0$.  An ideal excited molecule has
+        $\gamma/2\pi=15\,\mathrm{kHz}$, whereas the direct OFR experiment
+        measured an effective $40(5)\,\mathrm{kHz}$ width.  Its isolated-line
+        model works only close to one molecular level
+        \cite{blatt2011measurement,yan2013controlling}.}
     \end{tcolorbox}
 
 \end{minipage}\hfill
 \begin{minipage}[t]{0.585\textwidth}
     \vspace{0pt}
-    \showcaseheading{One laser, two inseparable effects}
+    \showcaseheading{A driven two-channel resonance}
     \centering
     \includegraphics[width=0.98\linewidth]{figures/figure1_ofr_schematic.pdf}
 
-    \vspace{1.5mm}
+    \vspace{1.2mm}
     \begin{tcolorbox}[showcasecard,colback=showcasemist,colframe=showcasecyan]
-        {\raggedright\sffamily\fontsize{9.1}{11.4}\selectfont
-        \textbf{Left:} the laser couples colliding atoms to an excited molecule; spontaneous decay opens a loss channel. \textbf{Right:} at fixed intensity, changing detuning moves the scattering length around a circle in the complex plane. Intensity selects the circle. The elastic and lossy responses therefore cannot be programmed independently.\par}
+        {\raggedright\sffamily\fontsize{8.65}{10.9}\selectfont
+        We denote the open and photon-dressed closed potentials by $V_o(R)$ and $V_c(R)-\hbar\omega_L$, respectively. The former supports a near-zero-energy scattering state, while the latter supports a molecular bound state $E_c$. Detuning controls the mismatch $E_c-E$ and intensity sets the coupling $W(I)$; efficient transfer requires a small mismatch and non-zero coupling. Concept adapted to the optical case from the two-channel construction of Chin \emph{et al.}~\cite{chin2010feshbach}.\par}
     \end{tcolorbox}
 
-    \vspace{2mm}
-    \begin{tcolorbox}[showcasecard,colframe=showcaseblue!65,colback=showcaseblue!5]
-        \showcasesubheading{Why use $^{88}\mathrm{Sr}$?}
-        {\sffamily\fontsize{9.2}{11.6}\selectfont
-        Its narrow $689\,\mathrm{nm}$ intercombination transition enables optical control with a comparatively long-lived excited molecular state. Its background interaction is close to zero, so changes of only a few Bohr radii strongly affect the gas \cite{blatt2011measurement,yan2013controlling}.}
+    \vspace{1.5mm}
+    \begin{tcolorbox}[showcasecard,colframe=showcasegold,colback=showcasegold!5]
+        {\raggedright\sffamily\fontsize{7.9}{9.7}\selectfont
+        \textbf{Assumed dimensional scattering length.}
+        The one-pole model used by the calculation is
+        \[
+            \boxed{\displaystyle
+            \ac(I,\nu)=\abg\!\left[1+
+            \frac{s\Gamma(I)}{-\nu-s\Gamma(I)+\ii\gamma/2}\right]},
+            \qquad s=\operatorname{sgn}(\abg),\quad \Gamma(I)=\kappa I\geq0.
+        \]
+        Here $\Gamma$, $\nu$, and $\gamma$ use the same frequency units. For
+        $^{88}\mathrm{Sr}$, $\abg=-1.4a_0$ gives $s=-1$, which preserves the
+        loss sign $\operatorname{Im}\ac<0$.
+
+        \textbf{Assumptions:} low-energy $s$-wave scattering with $E\to0$;
+        one open channel and one isolated excited molecular state; renormalised
+        zero-range coupling; constant Markovian molecular decay $\gamma$;
+        weak-field scaling $\Gamma=\kappa I$; and the tied light shift
+        $\nu_{\rm re}=\nu+s\Gamma$. The last identification is a model
+        parameterisation, not a universal OFR identity
+        \cite{liu2024weakly}.}
     \end{tcolorbox}
 \end{minipage}
-
-\vspace{3mm}
-\showcaseheading{From two laser waveforms to one objective}
-\begin{tcbraster}[
-    raster columns=5,
-    raster equal height=rows,
-    raster column skip=2.4mm,
-    raster row skip=0mm
-]
-    \begin{tcolorbox}[showcasecard,colframe=showcasegold]
-        {\color{showcasegold!75!black}\bfseries\fontsize{13}{14}\selectfont 1}\par\smallskip
-        {\bfseries Laser controls}\par
-        \smallskip$\Gamma(t)$ sets coupling; $\nu(t)$ sets detuning.
-    \end{tcolorbox}
-    \begin{tcolorbox}[showcasecard,colframe=showcaseblue]
-        {\color{showcaseblue}\bfseries\fontsize{13}{14}\selectfont 2}\par\smallskip
-        {\bfseries Complex interaction}\par
-        \smallskip$\ac(t)$ links elastic response and loss.
-    \end{tcolorbox}
-    \begin{tcolorbox}[showcasecard,colframe=showcasecyan]
-        {\color{showcaseblue}\bfseries\fontsize{13}{14}\selectfont 3}\par\smallskip
-        {\bfseries Quantum memory}\par
-        \smallskip A Volterra equation evolves $\eta(t)$.
-    \end{tcolorbox}
-    \begin{tcolorbox}[showcasecard,colframe=showcaseblue]
-        {\color{showcaseblue}\bfseries\fontsize{13}{14}\selectfont 4}\par\smallskip
-        {\bfseries Correlated pairs}\par
-        \smallskip Tan's contact scales as $|\eta(t)|^2$.
-    \end{tcolorbox}
-    \begin{tcolorbox}[showcasecard,colframe=showcasered]
-        {\color{showcasered}\bfseries\fontsize{13}{14}\selectfont 5}\par\smallskip
-        {\bfseries Molecular yield}\par
-        \smallskip Accumulate the lossy pair flux over time.
-    \end{tcolorbox}
-\end{tcbraster}
-
-\vspace{3mm}
-\begin{tcolorbox}[
-    enhanced,colback=showcaseblue,colframe=showcaseblue,boxrule=0pt,arc=3pt,
-    left=5mm,right=5mm,top=3mm,bottom=3mm
-]
-    {\color{white}\sffamily\bfseries\fontsize{11}{14}\selectfont
-    Strategy: use automatic differentiation to search smooth, bounded intensity and detuning histories---while retaining the memory of every earlier control decision.}
-\end{tcolorbox}
 
 \newpage
 
@@ -272,10 +304,10 @@
 \noindent
 \begin{minipage}[c]{0.76\textwidth}
     {\color{showcasenavy}\sffamily\bfseries\fontsize{24}{27}\selectfont
-    What the calculation shows so far\par}
+    Current numerical evidence\par}
     \vspace{1mm}
     {\color{showcaseink}\sffamily\fontsize{11}{14}\selectfont
-    A completed archived multi-start run provides a concrete pulse and a reproducibility check.}
+    Completed cap and regularisation sweeps, followed by targeted refinement, expose both reproducible low-cap structure and an unresolved high-cap instability.}
 \end{minipage}\hfill
 \begin{minipage}[c]{0.20\textwidth}
     \begin{tcolorbox}[
@@ -288,100 +320,85 @@
     \end{tcolorbox}
 \end{minipage}
 
-\vspace{3mm}
-\begin{tcolorbox}[showcasebox,colback=white,colframe=showcasecyan,left=3mm,right=3mm,top=2mm,bottom=2mm]
+\vspace{2mm}
+\begin{tcolorbox}[showcasebox,colback=white,colframe=showcasecyan,left=3mm,right=3mm,top=1mm,bottom=1mm]
     \centering
-    \includegraphics[width=0.99\linewidth]{figures/showcase_provisional_results.pdf}
+    \includegraphics[width=0.93\linewidth]{figures/showcase_provisional_results.pdf}
+    \vspace{0.3mm}
+    \parbox{0.96\linewidth}{\sffamily\fontsize{6.65}{8.1}\selectfont\RaggedRight
+    \textbf{Figure 2. Current numerical evidence (snapshot \ShowcaseSnapshotDate).}
+    \textbf{(a)} $n_{\rm mol}$ for all \ShowcaseDisplayedRuns{} seeds at all \ShowcaseDisplayedCaps{} $\Gamma_{\max}$ values; whiskers span min--max, short lines give medians, and outlined points give the maximum density. \textbf{(b)} Per-cap audit of that run: $N$, nested-grid error $\epsilon_g$, terminal stability ratios $\epsilon_J/J_{\rm tol}$, $\epsilon_u/u_{\rm tol}$, $\epsilon_v/v_{\rm tol}$, and dimensional first/second control derivatives. Here $\epsilon_g=|\mathcal{J}_{\mathrm{m},2N-1}-\mathcal{J}_{\mathrm{m},N}|/\max(|\mathcal{J}_{\mathrm{m},2N-1}|,y_{\rm floor})$; P/F denotes the $1\%$ test. \textbf{(c)} Regularised $\Gamma/\Gamma_{\max}$ histories against physical $t$, grouped as tight, crossover, and loose. Caps 40, 320, and 1280 are fully opaque; the other cap histories remain visible but faded.}
 \end{tcolorbox}
 
-\vspace{3mm}
+\vspace{2mm}
 \begin{tcbraster}[
     raster columns=4,
     raster equal height=rows,
     raster column skip=2.5mm,
     raster row skip=0mm
 ]
-    \begin{tcolorbox}[showcasecard,colframe=showcaseblue]
-        \centering{\color{showcasenavy}\bfseries\fontsize{20}{22}\selectfont 40/40}\par
-        \smallskip archived starts completed
+    \begin{tcolorbox}[showcasecard,colframe=showcaseblue,top=1.4mm,bottom=1.4mm]
+        \centering{\color{showcasenavy}\bfseries\fontsize{20}{22}\selectfont \ShowcaseDisplayedRuns}\par
+        \smallskip fixed-method seeds displayed
     \end{tcolorbox}
-    \begin{tcolorbox}[showcasecard,colframe=showcasecyan]
-        \centering{\color{showcasenavy}\bfseries\fontsize{20}{22}\selectfont 25,000}\par
-        \smallskip Adam steps per start
+    \begin{tcolorbox}[showcasecard,colframe=showcasecyan,top=1.4mm,bottom=1.4mm]
+        \centering{\color{showcasenavy}\bfseries\fontsize{19}{22}\selectfont \ShowcaseDisplayedCaps$\boldsymbol{\times}$\ShowcaseStartsPerCap}\par
+        \smallskip caps $\times$ seeds per cap
     \end{tcolorbox}
-    \begin{tcolorbox}[showcasecard,colframe=showcasegold]
-        \centering{\color{showcasenavy}\bfseries\fontsize{20}{22}\selectfont 23.8 ppm}\par
-        \smallskip best-to-worst objective spread
+    \begin{tcolorbox}[showcasecard,colframe=showcasegold,top=1.4mm,bottom=1.4mm]
+        \centering{\color{showcasenavy}\bfseries\fontsize{16}{19}\selectfont \ShowcaseFortyDensityScaled\;/\;\ShowcaseThreeTwentyDensityScaled}\par
+        \smallskip $n_{\rm mol}$ proxy in $10^{-21}\,\mathrm{m}^{-3}$ at $1.6/12.8\,\mathrm{MHz}$
     \end{tcolorbox}
-    \begin{tcolorbox}[showcasecard,colframe=showcasered]
-        \centering{\color{showcasenavy}\bfseries\fontsize{20}{22}\selectfont $N=100$}\par
-        \smallskip provisional time grid
+    \begin{tcolorbox}[showcasecard,colframe=showcasered,top=1.4mm,bottom=1.4mm]
+        \centering{\color{showcasenavy}\bfseries\fontsize{20}{22}\selectfont \ShowcaseStrictComplete}\par
+        \smallskip strict runs meeting stop criteria
     \end{tcolorbox}
 \end{tcbraster}
 
-\vspace{4mm}
+\vspace{2mm}
 \begin{minipage}[t]{0.315\textwidth}
     \vspace{0pt}
-    \begin{tcolorbox}[showcasecard,colframe=showcaseblue,colback=showcaseblue!4]
-        \showcaseheading{How to read the pulse}
-        {\sffamily\fontsize{9.1}{11.5}\selectfont
-        \textcolor{showcaseblue}{\textbf{1. Couple strongly at first.}} The best archived intensity begins at the cap, then quickly drops.
+    \begin{tcolorbox}[showcasecard,colframe=showcaseblue,colback=showcaseblue!4,top=1.8mm,bottom=1.8mm]
+        \showcasecardheading{What is reproducible}
+        {\sffamily\fontsize{7.7}{9.4}\selectfont
+        \textbf{Fixed campaign.} One $111{,}000$-step Adam schedule produced \ShowcaseSweepRuns{} runs at $N=100$. Panel (a) keeps every seed at all \ShowcaseSweepCaps{} caps, including collapsed solutions.
 
-        \vspace{2mm}
-        \textcolor{showcasered}{\textbf{2. Chirp the detuning.}} The pulse begins on one far-detuned edge and moves smoothly toward resonance.
+        \vspace{0.8mm}
+        \textbf{Tight cap.} Independent refinements repeatedly give $n_{\rm mol}\simeq\ShowcaseFortyDensityScaled\times10^{-21}\,\mathrm{m}^{-3}$ at $\Gamma_{\max}=\ShowcaseFortyCapMHz\,\mathrm{MHz}$; the control remains intensity-limited.
 
-        \vspace{2mm}
-        \textbf{3. Finish gently.} Both controls approach zero near the end. This is consistent with a prepare--convert sequence, but that mechanism still needs to be confirmed from $|\eta(t)|^2$ and the instantaneous flux.}
+        \vspace{0.8mm}
+        \textbf{Intermediate cap.} A 250-seed screen, all-seed polish, and top-20 L-BFGS refinement give $\ShowcaseThreeTwentyDensityScaled\times10^{-21}\,\mathrm{m}^{-3}$ at $\Gamma_{\max}=\ShowcaseThreeTwentyCapMHz\,\mathrm{MHz}$. The endpoint is time-limited.}
     \end{tcolorbox}
 \end{minipage}\hfill
 \begin{minipage}[t]{0.315\textwidth}
     \vspace{0pt}
-    \begin{tcolorbox}[showcasecard,colframe=showcasegold,colback=showcasegold!5]
-        \showcaseheading{Experimental scale}
-        {\sffamily\fontsize{9.1}{11.5}\selectfont
-        \textbf{$689\,\mathrm{nm}$}\quad narrow $^1S_0$--$^3P_1$ intercombination line.
+    \begin{tcolorbox}[showcasecard,colframe=showcasered,colback=showcasered!4,top=1.8mm,bottom=1.8mm]
+        \showcasecardheading{High-cap instability}
+        {\sffamily\fontsize{7.7}{9.4}\selectfont
+        \textbf{Heavy tail.} At $\Gamma_{\max}=\ShowcaseTwelveEightyCapMHz\,\mathrm{MHz}$, the median is only $\ShowcaseBaselineTwelveEightyMedianDensityScaled\times10^{-21}\,\mathrm{m}^{-3}$ while the best seed reaches $\ShowcaseBaselineTwelveEightyBestDensityScaled\times10^{-21}\,\mathrm{m}^{-3}$. At $102.4\,\mathrm{MHz}$ every seed collapses; neither behaviour defines saturation.
 
-        \vspace{2mm}
-        \textbf{$2\pi\!\times\!15\,\mathrm{kHz}$}\quad excited-molecule natural linewidth.
-
-        \vspace{2mm}
-        \textbf{$-24\,\mathrm{MHz}$}\quad binding of the demonstrated photoassociation level.
-
-        \vspace{2mm}
-        \textbf{$0.057\,\mathrm{W\,cm^{-2}}$}\quad published comparison intensity, about $0.47\,\mathrm{mW}$ for a $725\,\mu\mathrm{m}$ Gaussian waist.
-
-        \vspace{2mm}
-        Experiments changed the $^{88}\mathrm{Sr}$ scattering length by up to approximately $\pm10\abg$ with millisecond sample lifetimes \cite{yan2013controlling}.}
+        \vspace{0.8mm}
+        \textbf{Refinement still climbs.} The latest trajectory reaches $n_{\rm mol}=\ShowcaseTwelveEightyDensityScaled\times10^{-21}\,\mathrm{m}^{-3}$ after \ShowcaseHighCapSteps{} steps. Transfer from $N=100$ to 800 changes it by $\ShowcaseTwelveEightyGridChangePercent\%$, but matched reoptimisation remains outstanding. Narrow grid-scale excursions therefore cannot yet be interpreted as an available yield enhancement.}
     \end{tcolorbox}
 \end{minipage}\hfill
 \begin{minipage}[t]{0.315\textwidth}
     \vspace{0pt}
-    \begin{tcolorbox}[showcasecard,colframe=showcasered,colback=showcasered!4]
-        \showcaseheading{Before claiming an optimum}
-        {\sffamily\fontsize{9.1}{11.5}\selectfont
-        \textcolor{showcasered}{\textbf{Still required:}}
-        \begin{itemize}[leftmargin=4.2mm,topsep=1.5mm,itemsep=1.2mm]
-            \item reconcile the exact noninteracting initialization and kernel coefficient;
-            \item show time-grid convergence beyond $N=100$;
-            \item derive the prefactor connecting the objective to a molecule fraction;
-            \item complete the laser-cap sweep and identify any saturation regime;
-            \item test sensitivity to seeds, pulse smoothing, loss calibration, and detuning error.
-        \end{itemize}
-        The graph above therefore demonstrates \emph{optimizer agreement}, not yet experimental yield accuracy.}
+    \begin{tcolorbox}[showcasecard,colframe=showcasegold,colback=showcasegold!5,top=1.8mm,bottom=1.8mm]
+        \showcasecardheading{Interpretation and validation}
+        {\sffamily\fontsize{7.7}{9.4}\selectfont
+        Panel (c) compares $\Gamma/\Gamma_{\max}$ on the physical $0.4\,\mu\mathrm{s}$ horizon. The highly refined cap-40, cap-320, and cap-1280 solutions are emphasised; the remaining fixed-sweep controls provide faded context.
+
+        \vspace{0.8mm}
+        Panel (b) reports the stored $N\rightarrow2N-1$ forward check, all three terminal stability ratios, and both derivative orders for $\Gamma$ and $\nu$. Matched reoptimisation is still required before claiming a crossover cap or plateau.
+
+        \vspace{0.8mm}
+        Absolute molecule number also awaits reconciliation of the initialisation, kernel coefficient, and counting prefactor.}
     \end{tcolorbox}
 \end{minipage}
 
-\vfill
-\begin{tcolorbox}[
-    enhanced,colback=showcasenavy,colframe=showcasenavy,boxrule=0pt,arc=3pt,
-    left=5mm,right=5mm,top=3.2mm,bottom=3.2mm
-]
-    {\color{white}\sffamily\bfseries\fontsize{11.5}{14}\selectfont
-    Take-home message: optical molecule formation is a control problem with memory. The useful interaction and the loss channel are inseparable, so timing and detuning can matter as much as peak laser power.}
-\end{tcolorbox}
-
 \clearpage
 \restoregeometry
+\flushbottom
 \pagestyle{fancy}
 % Use a compact running title so the Rho two-sided header does not collide
 % with the journal name; the full title appears below.
@@ -405,7 +422,7 @@
     \vspace{3mm}
     \begin{tcolorbox}[showcasecard,colback=showcasegold!7,colframe=showcasegold]
         {\sffamily\fontsize{8.6}{10.7}\selectfont
-        \textbf{Technical-section status.} The following pages preserve the detailed physics, derivations, numerical-method specification, results structure, and experimental translation. Items marked \textbf{[TO COMPLETE]} are deliberate verification tasks for the final report; numerical placeholders should be replaced only from archived, source-labelled artifacts.}
+        \textbf{Data and validation status (\ShowcaseSnapshotDate).} Numerical statements in the Results section are regenerated from immutable configuration-document and queue identifiers; the accompanying JSON file records every source. Figure~2 uses the stated $^{88}\mathrm{Sr}$ conversion for $n_{\rm mol}$, $\Gamma_{\max}$, $t$, and the control derivatives; only the explicitly requested ratio $\Gamma/\Gamma_{\max}$ is dimensionless. Items marked \textbf{[TO COMPLETE]} identify unresolved derivation, matched-grid reoptimisation, or experimental-calibration work and are not hidden by the updated presentation.}
     \end{tcolorbox}
     \vspace{5mm}
 \end{minipage}
@@ -416,34 +433,34 @@
 \section{Introduction}\label{sec:introduction}
 %==========================================================
 
-    \rhostart{F}eshbach resonances make the interaction strength of an ultracold gas a controllable experimental parameter. At low collision energy, this control is summarized by the $s$-wave scattering length, and resonant coupling can change both its magnitude and sign \cite{chin2010feshbach}. Optical coupling adds speed and spatial selectivity, including for species without useful magnetic resonances, at the cost of spontaneous-emission and photoassociation loss \cite{bohn1997prospects,enomoto2008optical}.
+    \rhostart{F}eshbach resonances make the interaction strength of an ultracold gas a controllable experimental parameter. At low collision energy, this control is summarised by the $s$-wave scattering length, and resonant coupling can change both its magnitude and sign \cite{chin2010feshbach}. Optical coupling adds speed and spatial selectivity, including for species without useful magnetic resonances, at the cost of spontaneous-emission and photoassociation loss \cite{bohn1997prospects,enomoto2008optical}.
 
-    The central difficulty is dynamical. Molecular production at one instant depends not only on the laser settings at that instant, but also on the short-range pair correlations accumulated over the entire preceding protocol. Tan's contact organizes these correlations \cite{tan2008energetics,braaten2008exact}, while the universal short-time theory of Qi, Shi, and Zhai reduces their evolution to a history-dependent equation for a pair amplitude $\eta(t)$ \cite{qi2021maximum}. This combination turns molecular formation into an optimal-control problem with memory.
+    The central difficulty is dynamical. Molecular production at one instant depends not only on the laser settings at that instant, but also on the short-range pair correlations accumulated over the entire preceding protocol. Tan's contact organises these correlations \cite{tan2008energetics,braaten2008exact}, while the universal short-time theory of Qi, Shi, and Zhai reduces their evolution to a history-dependent equation for a pair amplitude $\eta(t)$ \cite{qi2021maximum}. This combination turns molecular formation into an optimal-control problem with memory.
 
     \begin{rhoenv}[frametitle=Central research question]
-        For a fixed observation time $T$ and a maximum available laser coupling $\Gamma_{\max}$, which experimentally realizable intensity and detuning trajectories maximize the accumulated molecular yield, and when does increasing $\Gamma_{\max}$ cease to improve that yield?
+        For a fixed observation time $T$ and a maximum available laser coupling $\Gamma_{\max}$, which experimentally realisable intensity and detuning trajectories maximise the accumulated molecular yield, and when does increasing $\Gamma_{\max}$ cease to improve that yield?
     \end{rhoenv}
 
     \subsection{Motivation and scope}
 
-        Abstract control of the real and imaginary parts of a complex scattering length can generate protocols that no laser can realize. This work instead uses the physical laser variables $\Gamma(t)$ and $\nu(t)$ and enforces $0\leq\Gamma(t)\leq\Gamma_{\max}$. A smoothness penalty and a posteriori slew-rate tests distinguish numerically optimal pulses from controls that can plausibly be produced in the laboratory.
+        Abstract control of the real and imaginary parts of a complex scattering length can generate protocols that no laser can realise. This work instead uses the physical laser variables $\Gamma(t)$ and $\nu(t)$ and enforces $0\leq\Gamma(t)\leq\Gamma_{\max}$. A smoothness penalty and a posteriori slew-rate tests distinguish numerically optimal pulses from controls that can plausibly be produced in the laboratory.
 
-        The intended output is a cap-response curve: optimized yield as a function of $\Gamma_{\max}/\gamma$, spanning the tight-cap and saturation regimes. The physical representative is fixed to bosonic $^{88}\mathrm{Sr}$, using the $^1S_0$--$^3P_1$ intercombination line near $689\,\mathrm{nm}$ and an excited $\mathrm{Sr}_2$ photoassociation level. This choice supplies measured linewidth, optical-length, cloud, and laser scales for translating the dimensionless calculation \cite{blatt2011measurement,yan2013controlling}.
+        The intended output is a cap-response curve: optimised yield as a function of $\Gamma_{\max}/\gamma$, spanning the tight-cap and saturation regimes. The physical representative is fixed to bosonic $^{88}\mathrm{Sr}$, using the $^1S_0$--$^3P_1$ intercombination line near $689\,\mathrm{nm}$ and an excited $\mathrm{Sr}_2$ photoassociation level. This choice supplies measured linewidth, optical-length, cloud, and laser scales for translating the dimensionless calculation \cite{blatt2011measurement,yan2013controlling}.
 
     \subsection{Objectives and contributions}
 
-        This report is organized around the following deliverables:
+        This report is organised around the following deliverables:
 
         \begin{enumerate}
             \item verify the optical two-channel mapping and its limiting cases;
             \item validate a discrete solver for the half-order Volterra dynamics;
-            \item optimize bounded physical controls with a reproducible multi-start procedure;
+            \item optimise bounded physical controls with a reproducible multi-start procedure;
             \item calibrate the learning-rate schedule and control smoothness, then test convergence, grid dependence, and seed sensitivity;
             \item identify cap-binding and cap-insensitive regimes in the molecular yield; and
-            \item translate one optimized dimensionless protocol into experimentally meaningful intensity, detuning, and duration.
+            \item translate one optimised dimensionless protocol into experimentally meaningful intensity, detuning, and duration.
         \end{enumerate}
 
-        \draftnote{End the introduction with a short paragraph stating what was actually achieved, including one headline number and the main physical interpretation. Do not repeat the abstract word-for-word.}
+        The present work completes the first cap-response campaign and two generations of regularisation search. The tight-cap result is reproducible across several optimiser stages, while the intermediate-cap value improves under targeted refinement. The principal new finding is negative but consequential: at high cap, longer optimisation increases $\Jmol$ by creating structure on the $N=100$ time scale, so the apparent upper envelope is not grid validated. The study therefore narrows the trustworthy operating region and specifies the resolution tests needed before an optical-power optimum can be claimed.
 
 %==========================================================
 \section{Physical Background}\label{sec:background}
@@ -451,7 +468,7 @@
 
     \subsection{Two-channel picture}
 
-        A Feshbach resonance effectively splits the two-body state into an open scattering channel and a closed molecular channel,
+        An optical Feshbach resonance is a laser-induced resonance between an open atomic scattering channel and an optically excited molecular bound state in a closed channel. The two-body state is consequently decomposed as
         \begin{equation}\label{eq:two-channel-state}
             \lvert\Psi\rangle
             =\lvert\psi_o\rangle\lvert o\rangle
@@ -473,13 +490,12 @@
             \psi_o(r)\propto1-\frac{a_s}{r}.
         \end{equation}
 
-        Purely elastic scattering yields a real scattering length. The molecular decay $\gamma$ introduced in the two-channel picture instead removes flux irreversibly, requiring a complex scattering length. With the signed-background convention used by the optical map below,
+        Purely elastic scattering yields a real scattering length. The molecular decay $\gamma$ introduced in the two-channel picture instead removes flux irreversibly, requiring a complex scattering length. With the time-dependence and $+\ii\gamma/2$ denominator convention used by the implementation,
         \begin{equation}\label{eq:complex-scattering-convention}
-            a_s=\alpha+\ii s\beta,
-            \qquad \beta\geq0,
-            \qquad s=\operatorname{sgn}(a_{\rm bg}).
+            a_s=\alpha-\ii\beta,
+            \qquad \beta\geq0.
         \end{equation}
-        The real part $\alpha$ controls the elastic phase shift, while the sign-weighted imaginary part captures irreversible loss into molecular or radiative channels \cite{bohn1997prospects}. We employ a zero-range model that enforces this boundary condition while neglecting finite-range microscopic structure inside the interaction region.
+        The real part $\alpha$ controls the elastic phase shift, while $\beta$ captures irreversible flux into molecular or radiative channels \cite{bohn1997prospects}. Consequently $\operatorname{Im}(1/a_s)\geq0$ wherever $a_s\ne0$. We employ a zero-range model that enforces this boundary condition while neglecting finite-range microscopic structure inside the interaction region.
 
         \draftnote{State the regime in which the zero-range and short-time approximations are valid for the chosen gas. Define all density, range, and many-body timescale inequalities that will later be checked.}
 
@@ -500,7 +516,7 @@
             \psi(\mathbf r,0)=\frac{1}{\sqrt{\mathcal V}},
             \qquad a_s(0)=0,
         \end{equation}
-        where $\mathcal V$ is the normalization volume. Thus the initial position-space probability density is uniform, $\lvert\psi(\mathbf r,0)\rvert^2=1/\mathcal V$.
+        where $\mathcal V$ is the normalisation volume. Thus the initial position-space probability density is uniform, $\lvert\psi(\mathbf r,0)\rvert^2=1/\mathcal V$.
 
         To solve the short-time dynamics, absorb the time-dependent contact boundary condition into the length-valued short-range amplitude
         \begin{equation}\label{eq:eta-definition}
@@ -554,20 +570,73 @@
 
     \subsection{Laser control of the scattering length}
 
-        Up to this point, $a_s(t)$ is an arbitrary prescribed interaction history. For the optical-control problem, Eq.~\eqref{eq:volterra} is analytically continued to a complex scattering length and that history is restricted to values accessible through the laser intensity and detuning. In the adopted two-channel convention, the non-negative control $\Gamma(I)$ is the magnitude of the stimulated width and its physical sign follows $s=\operatorname{sgn}(\abg)$:
-        \begin{equation}\label{eq:ofr-dimensional}
-            \ac(I,\nu)=|\abg|\left[
-                s+\frac{s\Gamma(I)}{-s\Gamma(I)-\nu-\ii\gamma/2}
+        Up to this point, $a_s(t)$ is an arbitrary prescribed interaction
+        history. For the optical-control problem, Eq.~\eqref{eq:volterra} is
+        analytically continued to a complex scattering length and that history
+        is restricted to values accessible through laser intensity and
+        detuning. A ``photon-dressed'' closed channel is the coupled
+        molecule--field state after accounting for the absorbed photon;
+        changing the laser frequency shifts its effective energy relative to
+        the open-channel threshold.
+
+        It is useful to separate the dimensional one-pole result from the
+        additional assumptions made by this project.  Eliminating one decaying
+        molecular state in the renormalised zero-range model of Liu, Shi, and
+        Wang gives \cite{liu2024weakly}
+        \begin{equation}\label{eq:ofr-one-pole}
+            \ac(E,I)=\abg\left[
+                1+\frac{\Gamma_{\rm s}(I)}
+                {E-\nu_{\rm re}(I)+\ii\gamma/2}
             \right].
         \end{equation}
-        Here $\abg$ is the background scattering length, $\Gamma(I)\propto|W|^2\propto I$ is the stimulated-width magnitude generated by the channel coupling, $\nu$ is the laser detuning, and $\gamma$ is the spontaneous decay rate. Crucially, $\operatorname{Re}\ac$ and $\operatorname{Im}\ac$ are linked by the same two laser controls and cannot be optimized independently \cite{bohn1997prospects}.
+        Here $\Gamma_{\rm s}$ is a \emph{signed} resonant-strength parameter,
+        while $\nu_{\rm re}$ is the coupling-renormalised molecular energy.
+        Equation~\eqref{eq:ofr-one-pole} is already an isolated-resonance,
+        zero-range description, but it does not by itself require the light
+        shift $\nu_{\rm re}-\nu$ to equal $\Gamma_{\rm s}$.
+
+        The outline makes two further choices: threshold scattering, $E=0$,
+        and the parameterisation
+        $\nu_{\rm re}(I)=\nu+\Gamma_{\rm s}(I)$.  Microscopically,
+        $\Gamma_{\rm s}=m|\alpha_{\rm re}|^2/(4\pi\abg)$ and therefore has
+        the sign of $\abg$.  The implementation instead stores the ordinary
+        non-negative magnitude $\Gamma=|\Gamma_{\rm s}|$ and carries
+        $s=\operatorname{sgn}(\abg)$ explicitly, so that
+        $\Gamma_{\rm s}=s\Gamma$.  Its dimensional map is consequently
+        \begin{equation}\label{eq:ofr-dimensional}
+            \ac(I,\nu)=\abg\left[
+                1+\frac{s\Gamma(I)}{-s\Gamma(I)-\nu+\ii\gamma/2}
+            \right].
+        \end{equation}
+        For a positive background this reduces directly to the outline's
+        formula. For $^{88}\mathrm{Sr}$, $s=-1$: the code can retain the
+        convenient bound $\Gamma\geq0$ without changing loss into gain. Here
+        $\Gamma(I)\propto|W|^2\propto I$ is the weak-field stimulated-width
+        magnitude, $\nu$ is the model detuning, and $\gamma$ is the molecular
+        decay rate.  All four quantities in the denominator must be expressed
+        consistently as energies, angular frequencies, or ordinary
+        frequencies; factors of $2\pi$ cannot be mixed.  The real and imaginary
+        parts of $\ac$ remain linked by the same two controls and cannot be
+        optimised independently \cite{bohn1997prospects}. Appendix~\ref{app:ofr-map}
+        gives the two-channel derivation, algebraic checks, sign translation,
+        and assumption ledger.
+
+        The identification
+        $\nu_{\rm re}-\nu=\Gamma_{\rm s}$ is a simplifying control
+        parameterisation, not a universal statement that an OFR light shift
+        equals its resonance strength.  In $^{88}\mathrm{Sr}$, the measured
+        light-shift slopes even change sign between nearby $0_u$ levels, and an
+        isolated-resonance expression fails once the detuning is comparable to
+        the molecular-level spacing \cite{blatt2011measurement}.  A calibrated
+        model should therefore allow separate strength and shift functions
+        before the optimised waveform is interpreted quantitatively.
 
         Narrow intercombination transitions reduce the natural linewidth and can therefore produce appreciable scattering changes at moderate intensity. The early ytterbium demonstration changed the zero-energy scattering phase using this strategy \cite{enomoto2008optical}. More directly relevant here, optical Feshbach resonances have been measured in a thermal $^{88}\mathrm{Sr}$ gas and used to control the collapse and expansion of an $^{88}\mathrm{Sr}$ condensate \cite{blatt2011measurement,yan2013controlling}. The small negative background scattering length makes even changes of a few Bohr radii dynamically important.
 
         \begin{figure}[H]
             \centering
             \includegraphics[width=\linewidth]{figures/figure1_ofr_schematic.pdf}
-            \caption{Physical control scheme for the optical Feshbach resonance. (a) A laser couples the open-channel atom-pair continuum to a detuned excited molecular state with matrix element $W(I)$, producing the stimulated width $\Gamma(I)\propto|W|^2$; spontaneous decay at rate $\gamma$ opens the loss channel. (b) Under Eq.~\eqref{eq:ofr-dimensionless}, changing detuning $v$ moves $\ac/\ell_\star$ around a fixed-intensity locus, while changing $u=\Gamma/\gamma$ selects the locus. The elastic and inelastic quadratures are therefore linked rather than independently controllable.}
+            \caption{Two-channel energy picture for an optical Feshbach resonance, adapted conceptually from Ref.~\cite{chin2010feshbach}. Here $V_o(R)$ is the open entrance potential and $V_c(R)-\hbar\omega_L$ is the photon-dressed closed potential. They support a near-zero-energy scattering state and molecular bound state $E_c$, respectively. Detuning controls the mismatch $E_c-E$, and optical intensity sets the coupling $W(I)$. The curves are schematic, not fitted $^{88}\mathrm{Sr}_2$ potentials.}
             \label{fig:ofr-schematic}
         \end{figure}
 
@@ -599,16 +668,16 @@
         Equation~\eqref{eq:ofr-dimensional} becomes the mapping implemented in the code,
         \begin{equation}\label{eq:ofr-dimensionless}
             \widetilde a_c(t)
-            =|r_{\rm bg}|\left[
-                s+\frac{s u(t)}{-s u(t)-v(t)-\ii/2}
+            =r_{\rm bg}\left[
+                1+\frac{s u(t)}{-s u(t)-v(t)+\ii/2}
             \right].
         \end{equation}
-        The absolute-value prefactor is necessary because $r_{\rm bg}$ is
-        stored as a signed ratio: at $u=0$, Eq.~\eqref{eq:ofr-dimensionless}
-        reduces to $\widetilde a_c=r_{\rm bg}$. The value $r_{\rm bg}=0$ is
-        excluded because its sign is undefined. Its nonzero magnitude and sign
-        are both physical inputs and can be swept without a separate sign
-        parameter.
+        At $u=0$, Eq.~\eqref{eq:ofr-dimensionless} reduces exactly to
+        $\widetilde a_c=r_{\rm bg}$. The value $r_{\rm bg}=0$ is excluded
+        because $s$ would be undefined. For the present $^{88}\mathrm{Sr}$
+        input, $r_{\rm bg}=-0.008716$ and hence the resonant denominator is
+        $u-v+\ii/2$; the low- and intermediate-cap controls in Fig.~2(c)
+        visibly track $v\simeq u$.
         The admissible controls obey
         \begin{equation}\label{eq:control-bounds}
             0\leq u(t)\leq u_{\max},\qquad
@@ -627,54 +696,85 @@
             \kappa_{\rm th}=\frac{1}{8\pi^{3/2}\sqrt{\ii}}.
         \end{equation}
 
-        \draftnote{Derive the contact and yield units, propagate the relatively large uncertainty in $\abg$, and check that every plotted quantity is labelled either dimensionlessly or in physical units. Keep the relative-coordinate mass convention in Eq.~\eqref{eq:time-dependent-pseudopotential} consistent throughout.}
-
-        \draftnote{The exact noninteracting start has $\eta(0)=0$. The current recurrence initializes $\eta_0=-4\pi\ac(0)$ and uses a separately coded kernel constant. Reconcile that initialization and verify the coded constant against Eq.~\eqref{eq:dimensionless-kernel-prefactor} before reporting production results.}
+        \begin{rhoenv}[frametitle=Unresolved solver convention]
+            The continuous noninteracting derivation gives $\eta(0)=0$ and the
+            coefficient in Eq.~\eqref{eq:dimensionless-kernel-prefactor}. The
+            current implementation instead initialises
+            $\eta_0=-4\pi\widetilde a_c(0)$ and sets
+            $\kappa_{\rm code}=-1/(4\pi^{3/2}\sqrt{\ii})$. These coefficients
+            differ in both sign and a factor of two. This is a known model audit,
+            not a small plotting uncertainty; all optimisation results remain
+            provisional until an independent benchmark selects the correct
+            convention.
+        \end{rhoenv}
 
     \subsection{Molecular-yield objective}
 
-        Under the sign convention in Eq.~\eqref{eq:ofr-dimensionless}, the loss--contact relation gives a non-negative product flux proportional to $-s\operatorname{Im}(1/\ac)|\eta|^2$. In the implemented dimensionless normalization, the accumulated objective is
+        Under the convention in Eq.~\eqref{eq:ofr-dimensionless}, the loss--contact relation gives a non-negative product flux proportional to $\operatorname{Im}(1/\ac)|\eta|^2$. In the implemented dimensionless normalisation, the accumulated objective is
         \begin{equation}\label{eq:molecule-objective}
             \Jmol[u,v]
             =\frac{1}{2\pi}\int_0^T
-            -s\operatorname{Im}\!\left(\frac{1}{\ac(t)}\right)
+            \operatorname{Im}\!\left(\frac{1}{\ac(t)}\right)
             |\eta(t)|^2\,\dd t.
         \end{equation}
-        This is the dimensionless, density-like quantity maximized in the current inelastic simulations. It is non-negative for either sign of $r_{\rm bg}$.
+        This is the dimensionless, density-like quantity maximised in the current inelastic simulations. It is non-negative for either sign of $r_{\rm bg}$.
 
         \begin{rhoenv}[frametitle=Counting convention to resolve]
-            Equation~\eqref{eq:molecule-objective} is a physical yield proxy, but the derivation must establish whether its prefactor counts depleted atoms, lost pairs, or product molecules. A positive global factor does not change the optimizing protocol, but it does change every quoted density, fraction, and molecule number. Until that factor and $g_2(0)$ are restored, report $\Jmol$ as a dimensionless objective rather than an absolute molecule count.
+            Restoring the dimensional scales gives the density conversion
+            $n_{\rm mol}=g_2(0)\ell_\star^3\Jmol$, because
+            $g_2(0)$ has units $L^{-6}$. The remaining physical derivation must
+            establish whether this normalisation counts depleted atoms, lost
+            pairs, or product molecules, and which pair factor applies to the
+            chosen gas. A positive global factor does not change the optimising
+            protocol, but it changes every quoted density, fraction, and
+            molecule number. Figure~\ref{fig:current-results} evaluates this
+            conversion with the supplied $g_2(0)=1\,\mathrm{m}^{-6}$ and labels
+            the result a \emph{density proxy}; it is not an experimentally
+            calibrated absolute yield until the counting convention is fixed.
         \end{rhoenv}
 
-    \subsection{Operational regularization}
+    \subsection{Operational regularisation}
 
-        Piecewise controls can exploit the discretization by developing unrealistically sharp features. To compare physical setups without changing the effective regularization, define $\bar u=u/u_{\max}$, $\bar v=v/v_{\max}$, and $\theta=t/T$. The code therefore subtracts the normalized finite-difference penalty
+        Piecewise controls can exploit the discretisation by developing unrealistically sharp features. The current code penalises first and second differences of the \emph{physical dimensionless controls} $u$ and $v$ (not cap-normalised controls). With $\Delta t=T/N$, it subtracts
         \begin{equation}\label{eq:smoothness}
-            \Rsm=\frac{1}{\Delta\theta}\sum_{k=0}^{N-1}
-            \left[
-                \lambda_u(\bar u_{k+1}-\bar u_k)^2
-                +\lambda_v(\bar v_{k+1}-\bar v_k)^2
-            \right]
-            ,\qquad \Delta\theta=\frac{\Delta t}{T}=\frac{1}{N}.
+            \begin{aligned}
+            \Rsm={}&\frac{\lambda_{u,1}}{\Delta t}
+                \sum_{k=0}^{N-1}(u_{k+1}-u_k)^2
+            +\frac{\lambda_{v,1}}{\Delta t}
+                \sum_{k=0}^{N-1}(v_{k+1}-v_k)^2\\
+            &+\frac{\lambda_{u,2}}{\Delta t^3}
+                \sum_{k=0}^{N-2}(u_{k+2}-2u_{k+1}+u_k)^2\\
+            &+\frac{\lambda_{v,2}}{\Delta t^3}
+                \sum_{k=0}^{N-2}(v_{k+2}-2v_{k+1}+v_k)^2.
+            \end{aligned}
         \end{equation}
-        Identical relative pulse shapes therefore receive identical penalties even when $T$, $u_{\max}$, or $v_{\max}$ differ. The optimizer maximizes the regularized score
+        The first-difference coefficients are configured through
+        \texttt{smoothness}, and the second-difference coefficients through
+        \texttt{sharpness}, with optional control-specific overrides. Because
+        the amplitudes are not normalised by their caps, the same coefficient
+        does not impose the same relative smoothing at different $u_{\max}$;
+        this is one reason the coefficients were swept separately for each
+        selected cap. The optimiser maximises the regularised score
         \begin{equation}\label{eq:score}
             \mathcal{S}=\Jmol-\Rsm,
         \end{equation}
-        while all quoted molecular yields must report the unpenalized $\Jmol$ as well. A posteriori slew tests are applied separately to avoid interpreting the regularizer as a hardware model.
+        while all quoted molecular yields must report the unpenalised $\Jmol$ as well. A posteriori slew tests are applied separately to avoid interpreting the regulariser as a hardware model.
 
 %==========================================================
 \section{Numerical Methods}\label{sec:numerics}
 %==========================================================
 
-    \subsection{Time discretization and L1 history solver}
+    \subsection{Time discretisation and L1 history solver}
 
-        The interval $[0,T]$ is divided into $N$ equal steps, $t_k=k\Delta t$, with controls represented at $N+1$ grid points. The L1 discretization uses the history weights
+        The interval $[0,T]$ is divided into $N$ equal steps, $t_k=k\Delta t$, with controls represented at $N+1$ grid points. The L1 discretisation uses the history weights
         \begin{equation}\label{eq:l1-weights}
             w_{k,j}=\sqrt{k-j}-\sqrt{k-j-1},
             \qquad 0\leq j\leq k-2.
         \end{equation}
-        Defining $q=2\kappa_{\rm code}/\sqrt{\Delta t}$ for the code-level kernel prefactor and
+        The implementation initialises
+        $\eta_0=-4\pi\ac(t_0)$ and defines
+        $q=2\kappa_{\rm code}/\sqrt{\Delta t}$ with
+        $\kappa_{\rm code}=-1/(4\pi^{3/2}\sqrt{\ii})$. For $k\geq1$, let
         \begin{equation}\label{eq:l1-history}
             H_k=\sum_{j=0}^{k-2}w_{k,j}(\eta_{j+1}-\eta_j),
         \end{equation}
@@ -684,43 +784,42 @@
             \frac{-1+q(\eta_{k-1}-H_k)}
             {1/[4\pi\ac(t_k)]+q}.
         \end{equation}
-        Molecular yield is then evaluated with the composite trapezoidal rule. Consistency with the continuous derivation requires the discretization, sign convention, and nondimensionalization to recover $\kappa_{\rm code}=\kappa_{\rm th}$ from Eq.~\eqref{eq:dimensionless-kernel-prefactor}.
-
-        \draftnote{Complete a constant- or power-law benchmark that verifies the kernel coefficient and initialization independently of optimization. Then give the formal convergence order for the solution regularity, computational complexity, and measured convergence from Section~\ref{sec:validation}.}
+        Molecular yield is evaluated with the composite trapezoidal rule. A
+        direct scan of the $k$ earlier samples gives $O(N^2)$ arithmetic and
+        $O(N)$ state storage for one control. Automatic differentiation has the
+        same nonlocal dependency structure. The mismatch
+        $\kappa_{\rm code}\ne\kappa_{\rm th}$ and the nonzero numerical
+        initialisation are stated explicitly because optimiser stability cannot
+        validate either choice.
 
     \subsection{Bounded physical controls}
 
-        Unconstrained optimizer variables $x_k,y_k\in\mathbb{R}$ are mapped smoothly into the admissible laser domain:
+        Unconstrained optimiser variables $x_k,y_k\in\mathbb{R}$ are mapped smoothly into the admissible laser domain:
         \begin{equation}\label{eq:bounded-map}
             u_k=u_{\max}\,\operatorname{sigmoid}(x_k),\qquad
             v_k=v_{\max}\tanh(y_k).
         \end{equation}
-        This parameterization makes every iterate physical with respect to the amplitude bounds and remains differentiable for automatic differentiation. Saturation of either map can, however, reduce gradients; cap-usage diagnostics are therefore retained.
+        This parameterisation makes every iterate physical with respect to the amplitude bounds and remains differentiable for automatic differentiation. Saturation of either map can, however, reduce gradients; cap-usage diagnostics are therefore retained.
 
-    \subsection{Gradient optimization}
+    \subsection{Gradient optimisation}
 
-        The calculation follows the logic of GRAPE: discretize the controls, differentiate the terminal performance with respect to every time slice, and update the complete pulse \cite{khaneja2005optimal}. JAX differentiates through the scattering map, Volterra scan, quadrature, and regularizer. Batched Adam updates are compiled and vectorized, with 64-bit arithmetic used for production calculations.
+        The calculation follows the logic of GRAPE: discretise the controls, differentiate the terminal performance with respect to every time slice, and update the complete pulse \cite{khaneja2005optimal}. JAX differentiates through the scattering map, Volterra scan, quadrature, and regulariser. Batched Adam updates are compiled and vectorised, with 64-bit arithmetic used for production calculations.
 
         The learning rate is changed in stages without resetting Adam's moment estimates. Stability is evaluated at fixed checkpoint intervals independently of those stages. For run $r$, the reported solution is the best finite iterate according to $\mathcal{S}$ when smoothing is active and according to $\Jmol$ otherwise.
 
     \subsection{Multi-start strategy and convergence tests}
 
-        The current workflow combines 16 structured $u$--$v$ initializations with 24 reproducible random Fourier initializations. Selected optimized controls are perturbed with smooth, zero-mean Fourier noise to probe local robustness. Seed sensitivity is treated as a population diagnostic, not as a stopping condition for an individual run.
+        Initialisation is campaign-specific and is archived per run. The completed nine-cap sweep uses 50 reproducible five-mode Fourier starts at every cap. Each of the first smoothness--sharpness grids contains $6\times5$ coefficient pairs and 15 starts per pair: ten new Fourier controls plus five controls selected from earlier cap-matched results, for 450 completed runs per cap. The later $15\times15$ exploratory grids use ten Fourier starts and one queried control per coefficient pair. Targeted peak and L-BFGS stages then resume only the strongest saved controls. This staged design allocates broad sampling to discovery and long trajectories to refinement, but it also means that best values from different stages are methodology-dependent upper envelopes rather than identically distributed estimates.
 
-        At present, the internal stopping test measures motion in the raw optimizer coordinates $z\in\{x,y\}$ over a checkpoint block of $M$ steps,
-        \begin{equation}\label{eq:raw-control-stability}
-            \epsilon_z^{\rm raw}(k)=
-            \frac{\|z_k-z_{k-M}\|_2}{\|z_k\|_2+\epsilon}.
-        \end{equation}
-        Because the sigmoid and $\tanh$ maps distort this distance near their bounds, final reporting should additionally use bounded, range-normalized changes
+        The current stopping test is evaluated every $M$ optimiser steps in the normalised feasible controls, not in the unbounded sigmoid/$\tanh$ coordinates. With $\bar u=u/u_{\max}$ and $\bar v=v/v_{\max}$,
         \begin{equation}\label{eq:physical-control-stability}
-            \epsilon_u=\frac{\|u_k-u_{k-M}\|_2}{\sqrt{N+1}\,u_{\max}},\qquad
-            \epsilon_v=\frac{\|v_k-v_{k-M}\|_2}{2\sqrt{N+1}\,v_{\max}}.
+            \epsilon_u=\frac{\|\bar u_k-\bar u_{k-M}\|_2}{\sqrt{N+1}},\qquad
+            \epsilon_v=\frac{\|\bar v_k-\bar v_{k-M}\|_2}{\sqrt{N+1}}.
         \end{equation}
-        A run is accepted only after the regularized score and every active control pass their tolerances for the required number of consecutive checkpoints. The score test, raw-coordinate stopping test, and bounded-control diagnostic must be labelled separately in figures and archived data.
+        Score stability uses the relative change between successive block-mean scores. A run is accepted only after the score and every enabled control metric pass their tolerances for three consecutive checkpoints; peak refinement can additionally require a projected-gradient threshold in normalised control space. A saved best iterate is retained even when a wall-time limit or failure prevents this stopping rule from being met, which is why status is shown explicitly in Fig.~2.
 
         \begin{table}[H]
-            \caption{Baseline $N=100$ numerical protocol encoded in the current calibration workflow. Confirm or replace these entries when production settings are frozen.}
+            \caption{Completed fixed-method cap-sweep protocol. Every displayed value is recoverable from configuration document 1, queue 696482.}
             \label{tab:numerical-protocol}
             \setlength{\tabcolsep}{3pt}
             \begin{tabular}{>{\raggedright\arraybackslash}p{0.43\columnwidth}>{\raggedright\arraybackslash}p{0.42\columnwidth}}
@@ -728,36 +827,39 @@
                 \textbf{Quantity} & \textbf{Current value} \\
                 \midrule
                 Grid intervals $N$ & $100$ \\
-                Initial learning rate & $10^{-2}$ \\
-                Stage schedule & $(5000,1)$, $(5000,0.5)$, $(7500,0.5)$, $(7500,0.5)$ \\
+                Horizon and background & $T=4$, $r_{\rm bg}=-0.008716$ \\
+                Intensity caps & $10,20,40,80,160,$\newline $320,640,1280,2560$ \\
+                Detuning bound & $v_{\max}=1000$ \\
+                Adam parameters & $\alpha_0=0.05$, $\beta_1=0.9$, $\beta_2=0.999$ \\
+                Stage schedule & $(1000,1)$, $(10{,}000,0.1)$, $(100{,}000,0.1)$ \\
                 Stability interval & $500$ steps \\
-                Consecutive passes & $3$ \\
-                Score tolerance & $10^{-5}$ \\
-                Raw-control tolerances & $10^{-3}$ for $x$ and $y$ \\
-                Initializations & $16$ structured $+24$ Fourier \\
-                Smoothness scan & $17$ log-spaced points over $10^{-4}$--$1$ \\
-                Shared slew parameter & $0.05$ \\
-                Arithmetic & JAX float64 \\
+                Tolerances & $J:10^{-5}$; normalised $u,v:10^{-3}$ \\
+                Regularisation & smoothness $5\times10^{-7}$; sharpness $5\times10^{-8}$ \\
+                Initialisations & 50 five-mode Fourier starts per cap \\
+                Arithmetic/device & JAX float64; CPU \\
                 \bottomrule
             \end{tabular}
-            \tabletext{Learning-rate multipliers compound between stages. The smoothness selection currently weights valid-run yield by $0.7$ and roughness by $0.3$.}
+            \tabletext{Learning-rate multipliers compound, so the three rates are $0.05$, $0.005$, and $0.0005$. The schedule ends after 111,000 steps; this fixed campaign did not auto-halt individual runs.}
         \end{table}
 
     \subsection{Calibration sequence and reproducibility}
 
-        The production methodology fixes hyperparameters in a prescribed order:
+        The current methodology proceeds in a source-labelled sequence:
         \begin{enumerate}
-            \item select the learning-rate schedule at $N=100$;
-            \item calibrate the shared smoothness against yield and slew validity;
-            \item sweep the initial intensity cap using those frozen settings; and
-            \item perform the final $u_{\max}$ sweep and robustness checks.
+            \item run a fixed-method nine-cap, 50-start baseline at $N=100$;
+            \item scan smoothness and sharpness at the tight and high caps, and
+            run a dedicated 250-seed crossover screen at $u_{\max}=320$;
+            \item polish every cap-320 seed and refine its top 20 controls while
+            broadening the other promising coefficient regions;
+            \item refine the best saved controls with monotone peak search and L-BFGS; and
+            \item transfer identical controls to finer grids before interpreting the high-cap envelope.
         \end{enumerate}
-        Numerical data, metadata, and figures are stored separately so that plots can be recreated without rerunning the optimizer.
+        Numerical data, immutable configuration documents, optimiser histories, and controls are stored separately from plotting code. The showcase generator writes both the figure and a JSON provenance record, so numerical claims can be checked without rerunning an optimiser.
 
         \begin{figure}[H]
             \centering
             \figureplaceholder[39mm]{Show the dependency graph: physics configuration $\rightarrow$ batched controls $\rightarrow$ scattering map $\rightarrow$ Volterra solver $\rightarrow$ objective/penalty $\rightarrow$ autodiff/Adam $\rightarrow$ CSV and figures.}
-            \caption{Computational workflow and artifact flow. Annotate the source-labelled directories used for configurations, results, figures, and logs.}
+            \caption{Computational workflow and artefact flow. Annotate the source-labelled directories used for configurations, results, figures, and logs.}
             \label{fig:workflow}
         \end{figure}
 
@@ -767,47 +869,47 @@
 
     \subsection{Analytical checks of the scattering map}
 
-        Equation~\eqref{eq:ofr-dimensionless} should be checked in three limits before optimization: $u\rightarrow0$ gives $\ac\rightarrow\abg$; large $|v|$ suppresses the optical shift and loss; and the near-resonant response reproduces the expected dispersive real part and absorptive imaginary part. These checks also establish the sign conventions for $v$ and $\operatorname{Im}\ac$.
+        Equation~\eqref{eq:ofr-dimensionless} should be checked in three limits before optimisation: $u\rightarrow0$ gives $\ac\rightarrow\abg$; large $|v|$ suppresses the optical shift and loss; and the near-resonant response reproduces the expected dispersive real part and absorptive imaginary part. These checks also establish the sign conventions for $v$ and $\operatorname{Im}\ac$.
 
         \begin{table}[H]
-            \caption{Minimum validation matrix. Replace the final column with measured errors and pass criteria.}
+            \caption{Validation ledger at the current data snapshot. ``Unit'' denotes an automated implementation test; it is not a substitute for an independent physical benchmark.}
             \label{tab:validation-matrix}
             \setlength{\tabcolsep}{3pt}
             \begin{tabular}{>{\raggedright\arraybackslash}p{0.30\columnwidth}>{\raggedright\arraybackslash}p{0.34\columnwidth}>{\raggedright\arraybackslash}p{0.23\columnwidth}}
                 \toprule
                 \textbf{Test} & \textbf{Expected behaviour} & \textbf{Result} \\
                 \midrule
-                No laser & $\ac/\abg\to1$ & [insert] \\
-                Far detuned & optical term $\to0$ & [insert] \\
-                Complex sign & $\operatorname{Im}\ac<0$ & [insert] \\
-                Constant $a_s$ & known/reference $\eta(t)$ & [insert] \\
-                Square-root ramp & universal onset law & [insert] \\
-                Grid refinement & convergent $\Jmol$ and pulse & [insert] \\
-                Autodiff gradient & finite-difference agreement & [insert] \\
+                No laser & $\ac/\abg\to1$ & Pass (unit) \\
+                Far detuned & optical term $\to0$ & Pass (algebra) \\
+                Complex sign & $\operatorname{Im}\ac\leq0$ & Pass (unit) \\
+                Constant $a_s$ & reference $\eta(t)$ & Open \\
+                Square-root ramp & universal onset law & Open \\
+                Grid refinement & convergent $\Jmol$ and pulse & Fails at high cap \\
+                Autodiff gradient & finite-difference agreement & Open \\
                 \bottomrule
             \end{tabular}
         \end{table}
 
     \subsection{Volterra solver and quadrature convergence}
 
-        Optimization stability at fixed $N$ is not evidence of time-grid convergence. For a sequence such as $N=100,200,400,800,1000$, define the relative yield difference
+        Optimisation stability at fixed $N$ is not evidence of time-grid convergence. For a sequence such as $N=100,200,400,800,1000$, define the relative yield difference
         \begin{equation}\label{eq:grid-error}
             \epsilon_N=
             \frac{|\Jmol^{(N)}-\Jmol^{(N_{\rm fine})}|}
             {\max(|\Jmol^{(N_{\rm fine})}|,10^{-12})}.
         \end{equation}
-        If no analytic reference is available, the difference between the two finest grids is an error estimate, not a rigorous bound. Report the error in $\eta(t)$ where a reference is available and whether qualitative control features persist. Because optimization can exploit grid-specific structure, use both routes: evaluate one fixed interpolated pulse on every grid, and independently reoptimize to comparable convergence at every $N$.
+        If no analytic reference is available, the difference between the two finest grids is an error estimate, not a rigorous bound. Report the error in $\eta(t)$ where a reference is available and whether qualitative control features persist. Because optimisation can exploit grid-specific structure, use both routes: evaluate one fixed interpolated pulse on every grid, and independently reoptimise to comparable convergence at every $N$.
 
         \begin{figure}[H]
             \centering
-            \figureplaceholder[48mm]{Panel (a): real and imaginary parts of $\eta(t)$ for several $N$. Panel (b): relative yield error versus $\Delta t$ on log axes with a fitted slope. Panel (c): optimized controls after interpolation to a common grid.}
-            \caption{Validation and grid-convergence tests for the L1 Volterra solver and optimized objective. State the reference solution and error norm in the caption.}
+            \figureplaceholder[48mm]{Panel (a): real and imaginary parts of $\eta(t)$ for several $N$. Panel (b): relative yield error versus $\Delta t$ on log axes with a fitted slope. Panel (c): optimised controls after interpolation to a common grid.}
+            \caption{Validation and grid-convergence tests for the L1 Volterra solver and optimised objective. State the reference solution and error norm in the caption.}
             \label{fig:solver-validation}
         \end{figure}
 
     \subsection{Gradient and baseline checks}
 
-        On a reduced grid, compare automatic derivatives of $\mathcal{S}$ with centered finite differences for randomly selected control components. Then reproduce the real-scattering-length or unconstrained baseline associated with the universal onset problem before introducing the physical OFR mapping.
+        On a reduced grid, compare automatic derivatives of $\mathcal{S}$ with centred finite differences for randomly selected control components. Then reproduce the real-scattering-length or unconstrained baseline associated with the universal onset problem before introducing the physical OFR mapping.
 
         \draftnote{Give numerical tolerances, hardware, software versions, and the commit identifier. A statement such as ``the curves look similar'' is not a validation criterion; quote norms and relative errors.}
 
@@ -815,106 +917,140 @@
 \section{Results}\label{sec:results}
 %==========================================================
 
-    \subsection{Learning-rate and convergence calibration}
+    \subsection{Completed fixed-method cap sweep}
 
-        Present the evidence used to select the staged Adam schedule. Separate the unpenalized physical objective $\Jmol$, smoothness penalty $\Rsm$, and regularized score $\mathcal{S}$, and show the checkpoint-based convergence criteria for the best and median initializations.
+        The completed fixed-method campaign (configuration document 1, queue
+        696482) contains nine intensity caps, 50 Fourier starts per cap, and
+        111,000 Adam steps per start. Figure~\ref{fig:current-results}(a)
+        shows every seed at every cap; no run is removed on the basis of its
+        objective. At $u_{\max}=40$, the median and
+        best values are $39.97$ and $81.676$; at $320$ they are
+        $\ShowcaseBaselineThreeTwentyMedian$ and
+        $\ShowcaseBaselineThreeTwentyBest$; and at $1280$ they are
+        $\ShowcaseBaselineTwelveEightyMedian$ and
+        $\ShowcaseBaselineTwelveEightyBest$, respectively. The separation
+        between median and best therefore grows by orders of magnitude and is
+        dominated by rare optimisation trajectories.
 
-        \begin{rhoenv}[frametitle=Provisional optimizer observation]
-            The project log records an exploratory schedule with one $(5000,1)$ stage followed by nine $(5000,0.5)$ stages. From an initial rate $10^{-2}$, the nine cumulative halvings give a final rate $1.95\times10^{-5}$ without resetting Adam's moments. Under the metric then in use, the objective change reached approximately $10^{-10}$ while the two control changes remained just above $10^{-3}$. Most starts approached similar controls, but one reached zero yield; milder annealing retained a wider family of controls. These observations must be reproduced from archived run data before being promoted to quantitative results. They suggest a shallow or poorly conditioned optimum, not an exactly flat objective.
-        \end{rhoenv}
-
-        Use the fully annealed ensemble for the primary yield estimate once reproduced; use milder schedules only to diagnose the landscape. Numerical precision in the reported yield is limited by the grid-convergence study, even when optimizer stability is much smaller.
-
-        \begin{figure*}[t]
-            \centering
-            \figureplaceholder[48mm]{Recommended panels: $\Jmol$, $\Rsm$, and $\mathcal{S}$ histories with learning-rate boundaries; score stability; bounded $\epsilon_u$ and $\epsilon_v$ from Eq.~\eqref{eq:physical-control-stability}; final-yield distribution including failures. Overlay all converged controls faintly, with the median or best protocol emphasized.}
-            \caption{Learning-rate calibration and convergence diagnostics at $N=100$. Vertical markers should identify stage changes and horizontal markers the stopping tolerances. Report $n_{\rm success}/40$, define failure before inspecting outcomes, and display rather than silently remove any zero-yield run.}
-            \label{fig:convergence}
-        \end{figure*}
-
-        \draftnote{Archive and reproduce the ten-stage observation, then state which schedule was selected and why. Diagnose any zero-yield start by checking $u\simeq0$, saturation of raw variables, gradient norms, and non-finite values; unless it is shown to be a valid stationary solution, classify it as an optimization failure.}
-
-    \subsection{Shallow-landscape diagnosis}
-
-        Similar values of $\Jmol$ need not imply identical controls. Let $(u^\star,v^\star)$ be the best converged protocol and define, for run $i$,
-        \begin{align}\label{eq:landscape-distance}
-            d_u^{(i)}&=\frac{\|u^{(i)}-u^\star\|_2}{\sqrt{N+1}\,u_{\max}}, &
-            d_v^{(i)}&=\frac{\|v^{(i)}-v^\star\|_2}{2\sqrt{N+1}\,v_{\max}},\nonumber\\
-            d_{uv}^{(i)}&=\sqrt{(d_u^{(i)})^2+(d_v^{(i)})^2}, &
-            \Delta J^{(i)}&=\frac{\Jmol^\star-\Jmol^{(i)}}{|\Jmol^\star|}.
-        \end{align}
-        A broad range of $d_{uv}$ at small $\Delta J$ supports a shelf of nearly equivalent solutions. Plot both $\Jmol$ and $\mathcal{S}$: flat $\Jmol$ but curved $\mathcal{S}$ means the regularizer selects a smooth representative, whereas flatness in both gives stronger evidence of a shallow physical landscape.
-
-        Confirm this with no-reoptimization line scans in raw optimizer space, $z(\lambda)=(1-\lambda)z^\star+\lambda z^{(i)}$. Compare not only the controls but the induced $\ac(t)$, $|\eta(t)|^2$, and flux $\operatorname{Im}(1/\ac)|\eta|^2$: visibly different laser waveforms may be physically equivalent after the nonlinear scattering map and history dynamics.
-
-    \subsection{Smoothness and slew calibration}
-
-        The shared coefficient $\lambda_u=\lambda_v=\lambda$ is scanned logarithmically. The choice must balance physical yield against roughness while satisfying separate normalized slew limits for both controls. Report all run-level points, not only medians, so that failure fractions and outliers remain visible.
+        The $u_{\max}=2560$ population does not continue this upper envelope.
+        All 50 starts remain near
+        $\Jmol=\ShowcaseBaselineTwentyFiveSixtyMedian$ under the same schedule.
+        This is an optimiser collapse associated with the fixed
+        parameterisation and schedule, not evidence that molecule production
+        physically vanishes above a threshold. Conversely, the large isolated
+        best values at $u_{\max}=320$--$1280$ cannot be interpreted as a
+        saturation curve. The completed sweep establishes strong cap and seed
+        sensitivity, but it does not by itself locate a crossover or plateau.
 
         \begin{figure*}[t]
             \centering
-            \figureplaceholder[52mm]{Combine the generated calibration figures: (a) normalized $u$ slew versus $\lambda$; (b) normalized $v$ slew versus $\lambda$; (c) valid-run median yield and roughness or weighted selection score. Mark the selected $\lambda$.}
-            \caption{Smoothness calibration under the configured slew constraints. Define the slew metric, valid-run criterion, and selection rule in the caption.}
-            \label{fig:smoothness-calibration}
+            \includegraphics[width=0.98\textwidth]{figures/showcase_provisional_results.pdf}
+            \caption{Current numerical evidence, regenerated from archived
+            data on \ShowcaseSnapshotDate. (a) Dimensionless molecular
+            objective $\Jmol$ for all \ShowcaseDisplayedRuns{} fixed-method
+            seeds across the full \ShowcaseDisplayedCaps{}-cap campaign.
+            Cap identity is colour coded across every panel. Thin whiskers span
+            the minimum--maximum range, short thin bars give the median, and
+            outlined points mark the run with the largest regularised score at
+            each cap. (b) Fixed-control grid refinement: each of those nine
+            best-score $N=100$ pulses is linearly transferred and reevaluated at
+            $N=100,200,400,800$ without reoptimisation. This tests the forward
+            evaluation of the same pulse; it does not establish convergence of
+            independently reoptimised optima. (c) Raw, unnormalised
+            dimensionless controls $u(t)$ and $v(t)$ for the same selected
+            runs, grouped into tight ($u_{\max}\leq160$), crossover
+            ($u_{\max}=320,640$), and loose ($u_{\max}=1280,2560$) regimes;
+            the horizontal axis is $t/t_\star$. Physical interpretations
+            elsewhere use $t_\star=10^{-7}\,\mathrm{s}$,
+            $a_{\rm bg}=-1.4a_0$, $m=1.459707\times10^{-25}\,\mathrm{kg}$,
+            $\gamma=40{,}000\,\mathrm{Hz}$, and $g_2(0)=1\,\mathrm{m}^{-6}$,
+            but these conversions are deliberately not applied to this figure.
+            Exact database paths, configuration
+            document IDs, queue IDs, run IDs, statuses, and summary statistics
+            are written to
+            \texttt{figures/showcase\_results\_metadata.json}.}
+            \label{fig:current-results}
         \end{figure*}
 
-        \draftnote{Report the selected $\lambda$, valid-run fraction, loss in unpenalized yield relative to weak regularization, and sensitivity of the choice to the 0.7/0.3 selection weighting.}
+    \subsection{Regularisation search and targeted refinement}
 
-    \subsection{Optimized laser-constrained protocol}
+        Separate archived cap-40 and cap-1280 searches include completed
+        $6\times5$ smoothness--sharpness grids. Cap 320 instead uses a dedicated
+        crossover screen: 250 broad Fourier seeds, a monotone polish of every
+        seed, and loose L-BFGS refinement of the top 20. The stages contain 520
+        completed run records and expose strong seed dependence: their best
+        objectives rise from $167.16$ in exploration to $436.73$ after
+        all-seed polishing and $\ShowcaseThreeTwentyObjective$ in the top-20
+        stage.
 
-        For one representative cap, show how the optimized physical controls generate the complex scattering length, pair amplitude, instantaneous molecular flux, and cumulative yield. This is the key figure for explaining the mechanism rather than only the performance.
+        The cap-40 value $\Jmol=\ShowcaseFortyObjective$ agrees to the displayed
+        precision across long Adam, peak-refinement, and L-BFGS records. The
+        selected cap-320 endpoint has
+        $\Jmol=\ShowcaseThreeTwentyObjective$, but its L-BFGS run ended at the
+        time limit after 1,250 iterations rather than satisfying the stability
+        test. Moreover, the fixed-method cap-320 campaign contains a still
+        larger rare-seed objective, $\ShowcaseBaselineThreeTwentyBest$. The
+        selected point is therefore a source-labelled control for comparison,
+        not a converged cap-320 optimum or an absolute molecule yield.
 
-        \begin{figure*}[t]
-            \centering
-            \figureplaceholder[62mm]{Recommended panels: (a) $u(t)$ with $u_{\max}$; (b) $v(t)$ with detuning bounds; (c) trajectory of $\ac/\abg$ in the complex plane; (d) $|\eta(t)|^2$; (e) instantaneous $\operatorname{Im}(1/\ac)|\eta|^2/(2\pi)$; (f) cumulative $\Jmol(t)$.}
-            \caption{Representative optimized protocol and its physical response. Use a common normalized time axis, mark cap-active intervals, and identify which historical features build contact before molecular conversion.}
-            \label{fig:optimal-protocol}
-        \end{figure*}
+    \subsection{Control structure and the high-cap failure mode}
 
-        \draftnote{Explain the pulse chronologically. Distinguish observations visible in the data from physical interpretations such as contact preparation, conversion, or quantum-Zeno-like suppression.}
+        Figure~\ref{fig:current-results}(c) now compares like with like: at each
+        cap it takes the largest regularised-score run from the same completed
+        fixed-method campaign and plots the archived $u(t)$ and $v(t)$ without
+        dividing by $u_{\max}$ or $v_{\max}$. The tight group contains caps
+        $10$--$160$, the crossover group contains $320$ and $640$, and the
+        loose group contains $1280$ and $2560$. Separate vertical scales are
+        used only between these three regimes, where the allowed amplitudes
+        differ by orders of magnitude; within a regime the curves share one
+        raw dimensionless scale and retain the cap colours used in panels (a)
+        and (b). This presentation exposes the transition from predominantly
+        cap-active tight controls to more structured crossover and loose-cap
+        histories without conflating amplitude changes with normalisation.
 
-    \subsection{Yield versus available laser power}
+        The separately targeted cap-1280 trajectory is not substituted into
+        that fixed-method comparison. Its latest saved iterate reaches the
+        density proxy
+        $n_{\rm mol}=\ShowcaseTwelveEightyDensityScaled\times
+        10^{-21}\,\mathrm{m}^{-3}$ after
+        \ShowcaseHighCapSteps{} steps, yet the objective is still increasing
+        and none of the five strict cap-1280 members has passed the stopping
+        rule. Its pulse contains narrow changes over one or a few grid
+        intervals, including excursions near the endpoint. The regularisation
+        penalty is finite, but it has not prevented the optimiser from using
+        the $N=100$ discretisation as an additional degree of freedom. The
+        increasing objective must therefore be treated as a lower bound on a
+        \emph{discrete} optimisation trajectory, not as a physical optimum.
+        Direct transfer of this fixed pulse from $N=100$ to 800 changes the
+        reevaluated objective by $\ShowcaseTwelveEightyGridChangePercent\%$,
+        and the change from $N=400$ to 800 is only
+        $\ShowcaseTwelveEightyFineGridChangePercent\%$. This shows that the
+        forward evaluation of the interpolated pulse is settling; it does not
+        show that a fresh high-cap optimisation would recover the same narrow
+        structure or objective.
 
-        The master result is obtained by sweeping $u_{\max}=\Gamma_{\max}/\gamma$ over approximately three decades while holding the validated numerical methodology fixed. Both best and median multi-start yields should be shown. The normalized cap usage
-        \begin{equation}\label{eq:cap-usage}
-            r_u=\max_k\frac{u_k}{u_{\max}}
-        \end{equation}
-        distinguishes power-limited solutions from those that leave additional intensity unused.
+    \subsection{What is and is not established}
 
-        \begin{figure*}[t]
-            \centering
-            \figureplaceholder[58mm]{Panel (a): optimized $\Jmol$ versus $u_{\max}$ on a logarithmic cap axis, with best, median, and run spread. Add the unconstrained/universal benchmark where justified. Panel (b): median and maximum $r_u$. Shade tight-cap, crossover, and saturation regimes.}
-            \caption{Optimized molecular yield as a function of the available optical coupling. Define the statistical summary, cap-binding threshold, uncertainty band, and criterion used to identify saturation.}
-            \label{fig:cap-sweep}
-        \end{figure*}
+        The data establish three points. First, finite intensity matters: the
+        tight-cap protocol is cap-active and has a repeatedly recovered saved
+        objective near $81.68$. Second, the optimisation landscape becomes
+        strongly multimodal with increasing cap; population medians and best
+        values answer different questions. Third, long high-cap searches expose
+        grid-scale structure rather than a plateau. Accordingly, no crossover
+        cap, saturation yield, low-cap scaling exponent, or experimentally
+        calibrated molecule fraction is reported here.
 
-        \begin{table}[H]
-            \caption{Quantitative comparison of the regimes in \figref{fig:cap-sweep}.}
-            \label{tab:cap-regimes}
-            \setlength{\tabcolsep}{3pt}
-            \begin{tabular}{>{\raggedright\arraybackslash}p{0.27\columnwidth}>{\raggedright\arraybackslash}p{0.25\columnwidth}>{\raggedright\arraybackslash}p{0.34\columnwidth}}
-                \toprule
-                \textbf{Regime} & \textbf{$u_{\max}$ range} & \textbf{Observed behaviour} \\
-                \midrule
-                Tight cap & [insert] & [yield scaling and $r_u$] \\
-                Crossover & [insert] & [pulse/mechanism change] \\
-                Saturation & [insert] & [plateau criterion] \\
-                \bottomrule
-            \end{tabular}
-        \end{table}
-
-        \draftnote{Quote the fitted low-cap scaling if supported, the crossover cap, the plateau yield, and the incremental gain from the largest tested cap. Do not infer a true asymptote from too narrow a sweep.}
-
-    \subsection{Robustness and uncertainty}
-
-        Robustness should cover at least initialization seed, grid resolution, convergence tolerance, smoothness choice, and modest perturbations to the final controls. Treat zero or non-finite yield as a reported failure category rather than filtering it from the seed statistics. Where experimental parameters are uncertain, repeat the final protocol for representative variations in $\gamma$, intensity calibration, and detuning offset.
-
-        \begin{figure}[H]
-            \centering
-            \figureplaceholder[47mm]{Summarize seed spread and robustness: final-yield distribution with failures; $\Delta J$ versus $d_{uv}$; raw-space line scans of $\Jmol$ and $\mathcal{S}$; yield after smooth Fourier perturbations; and relative changes under grid or parameter variations.}
-            \caption{Numerical, landscape, and control robustness of the optimized yield. Give the total and successful run counts, define every perturbation distribution, and distinguish optimizer spread from discretization error.}
-            \label{fig:robustness}
-        \end{figure}
+        Figure~\ref{fig:current-results}(b) now separates one part of control
+        optimisation from solver resolution. Between $N=100$ and 800, the
+        fixed-control objective changes by $\ShowcaseFortyGridChangePercent\%$,
+        $\ShowcaseThreeTwentyGridChangePercent\%$, and
+        $\ShowcaseTwelveEightyGridChangePercent\%$ at caps 40, 320, and 1280,
+        respectively. Independent reoptimisations must still test whether each
+        pulse structure and objective persist under matched physical
+        regularisation. Only after that test, the kernel/initialisation audit,
+        and the counting-prefactor
+        derivation should initialisation-seed and laser-calibration uncertainty
+        be propagated into a physical yield.
 
 %==========================================================
 \section{Experimental Translation}\label{sec:experiment}
@@ -922,7 +1058,32 @@
 
     \subsection{Fixed representative: bosonic strontium-88}
 
-        The physical reference is an $^{88}\mathrm{Sr}$ condensate in the $^1S_0+{}^1S_0$ entrance channel, optically coupled near the $^1S_0+{}^3P_1$ molecular asymptote. The atomic intercombination line is near $689\,\mathrm{nm}$; its measured $^{88}\mathrm{Sr}$ frequency is $434\,829\,121\,311(10)\,\mathrm{kHz}$ \cite{ferrari2003precision}. The condensate experiment used the second-least-bound excited molecular level, with binding energy $h\times24\,\mathrm{MHz}$ below this asymptote \cite{yan2013controlling}.
+        The physical reference is an $^{88}\mathrm{Sr}$ condensate in the
+        $^1S_0+{}^1S_0$ entrance channel, optically coupled near the
+        $^1S_0+{}^3P_1$ molecular asymptote. The atomic intercombination line is
+        near $689\,\mathrm{nm}$; its measured $^{88}\mathrm{Sr}$ frequency is
+        $434\,829\,121\,311(10)\,\mathrm{kHz}$
+        \cite{ferrari2003precision}. The condensate experiment used the
+        second-least-bound excited molecular level, with binding energy
+        $h\times24\,\mathrm{MHz}$ below this asymptote
+        \cite{yan2013controlling}.  The reduced-map baseline is
+        $\abg=-1.4(6)a_0\simeq-7.41\times10^{-11}\,\mathrm{m}$; because this
+        value is unusually close to zero, a sensitivity sweep over roughly
+        $-2.0a_0$ to $-0.8a_0$ is more defensible than treating the central
+        value as exact \cite{blatt2011measurement}.
+
+        Two linewidths answer different questions.  The ideal radiative
+        molecule has $\gamma_{\rm mol}=2\gamma_a$ with
+        $\gamma_a/2\pi=7.5\,\mathrm{kHz}$, hence
+        $\gamma_{\rm mol}/2\pi=15\,\mathrm{kHz}$.  The direct thermal-gas OFR
+        measurement instead fitted an effective total width
+        $\gamma_{\rm eff}/2\pi=40(5)\,\mathrm{kHz}$, incorporating additional
+        broadening \cite{blatt2011measurement}.  The former is an ideal-theory
+        input; the latter is the appropriate baseline for the present
+        empirically broadened reference.  The figures use ordinary frequencies
+        with $\gamma_f=40\,\mathrm{kHz}$ throughout.  An angular-frequency
+        calculation is equivalent only if $\Gamma$, $\nu$, and $\gamma$ are all
+        multiplied by $2\pi$.
 
         The measured intensity calibration is naturally expressed through the optical length $\ell_{\rm opt}$ rather than a universal constant $\xi$:
         \begin{equation}\label{eq:sr-intensity-calibration}
@@ -930,12 +1091,28 @@
             \Gamma_{\rm stim}=2k_r\ell_{\rm opt}\Gamma_{\rm mol},\qquad
             \beta=2.2\times10^4\frac{a_0}{\mathrm{W\,cm^{-2}}},
         \end{equation}
-        where $k_r$ is the relative collision wave number and $\Gamma_{\rm mol}=2\pi\times15\,\mathrm{kHz}$ \cite{yan2013controlling}. If the model quantities are identified as $\Gamma=\Gamma_{\rm stim}$, $\gamma=\Gamma_{\rm mol}$, and $\nu=\Delta$, then
+        where $k_r$ is the relative collision wave number and
+        $\Gamma_{\rm mol}=2\pi\times15\,\mathrm{kHz}$
+        \cite{yan2013controlling}.  If the code's non-negative magnitude is
+        identified as $\Gamma=\Gamma_{\rm stim}$, while
+        $\gamma=\Gamma_{\rm mol}$ and $\nu=\Delta$, then
         \begin{equation}\label{eq:intensity-conversion}
             I_{\max}=\frac{u_{\max}}{2k_r\beta},\qquad
             \frac{\Delta(t)}{2\pi}=\left(15\,\mathrm{kHz}\right)v(t).
         \end{equation}
-        Thus an intensity cap cannot be assigned until $k_r$ is fixed consistently from the simulated gas. By contrast, the current $v_{\max}=50$ maps directly to $|\Delta|/2\pi=0.75\,\mathrm{MHz}$, within the experimentally explored range.
+        Thus an intensity cap cannot be assigned until $k_r$ is fixed
+        consistently from the simulated gas. By contrast, under this
+        ideal-width choice the current $v_{\max}=1000$ maps directly to
+        $|\Delta|/2\pi=15\,\mathrm{MHz}$; the same dimensionless bound would be
+        $40\,\mathrm{MHz}$ under the effective-width choice used in the
+        showcase dimensionalisation. Both exceed the $10\,\mathrm{MHz}$ range
+        quoted for the reference condensate experiment and must not be mixed in
+        one conversion.  More fundamentally,
+        Eq.~\eqref{eq:sr-intensity-calibration} calibrates a positive
+        stimulated linewidth, whereas the tied shift in
+        Eq.~\eqref{eq:ofr-dimensional} remains a model assumption; the two
+        identifications require validation against the selected molecular
+        level.
 
         \begin{table*}[t]
             \caption{Fixed $^{88}\mathrm{Sr}$ reference parameters. ``Derived'' values use the central reported quantities and are not additional measurements.}
@@ -947,8 +1124,9 @@
                 \midrule
                 Isotope and channel & Bosonic $^{88}\mathrm{Sr}$; $^1S_0+{}^1S_0\rightarrow{}^1S_0+{}^3P_1$ & \cite{blatt2011measurement,yan2013controlling} \\
                 Atomic line & $689\,\mathrm{nm}$; $434\,829\,121\,311(10)\,\mathrm{kHz}$ & \cite{ferrari2003precision} \\
-                Background length & $\abg=-1.4(6)a_0$; the condensate paper uses the rounded value $-2a_0$ & \cite{blatt2011measurement,yan2013controlling} \\
-                Molecular reference & Second-least-bound level at $-24\,\mathrm{MHz}$; $\Gamma_{\rm mol}/2\pi=15\,\mathrm{kHz}$ & \cite{yan2013controlling} \\
+                Background length & $\abg=-1.4(6)a_0\simeq-7.41\times10^{-11}\,\mathrm{m}$; sweep $-2.0a_0$ to $-0.8a_0$; the condensate paper uses the rounded value $-2a_0$ & \cite{blatt2011measurement,yan2013controlling} \\
+                Molecular reference & Second-least-bound level at $-24\,\mathrm{MHz}$; ideal $\gamma_{\rm mol}/2\pi=15\,\mathrm{kHz}$; measured effective $\gamma_{\rm eff}/2\pi=40(5)\,\mathrm{kHz}$ & \cite{blatt2011measurement,yan2013controlling} \\
+                Measured light shifts & $0_u$ levels $n=-2,-3,-4$: respectively $-251(67)$, $+29(2)$, and $+4(1)\,\mathrm{kHz}/(\mathrm{W\,cm^{-2}})$ & \cite{blatt2011measurement} \\
                 Optical coupling & $\ell_{\rm opt}/I=2.2\times10^4a_0/(\mathrm{W\,cm^{-2}})$; at $0.057\,\mathrm{W\,cm^{-2}}$, $\ell_{\rm opt}=1.25\times10^3a_0$ & \cite{yan2013controlling}; derived \\
                 Demonstrated controls & $|\Delta|/2\pi$ up to $10\,\mathrm{MHz}$, or $|\Delta|/\Gamma_{\rm mol}\simeq667$; typical $a=20a_0$ at $+1\,\mathrm{MHz}$; changes up to $a_{\rm opt}/\abg=\pm10$ & \cite{yan2013controlling} \\
                 Condensate & $N_0\simeq7000$, peak density $n_0=1\times10^{15}\,\mathrm{cm^{-3}}$, initial size $\sigma_0=0.8\,\mu\mathrm{m}$, trap mean frequency $2\pi\times(60\pm5)\,\mathrm{Hz}$ & \cite{yan2013controlling} \\
@@ -960,18 +1138,36 @@
 
     \subsection{Experimentalist's recipe}
 
-        Use $I=0.057\,\mathrm{W\,cm^{-2}}$, waist $725\,\mu\mathrm{m}$, and detunings of order $1\,\mathrm{MHz}$ as a literature-anchored comparison point, not yet as the optimized recommendation. The quoted beam corresponds to approximately $0.47\,\mathrm{mW}$ if $I$ is the peak intensity of a Gaussian beam. Once the fixed reference time $t_\star$ has been selected, the reported $1.2$- and $4$-ms exposures must be converted using $\tau=t/t_\star$; they cannot be represented by silently setting the solver's $T=1$ equal to one millisecond.
+        Use $I=0.057\,\mathrm{W\,cm^{-2}}$, waist $725\,\mu\mathrm{m}$, and
+        detunings of order $1\,\mathrm{MHz}$ as a literature-anchored
+        comparison point, not yet as the optimised recommendation. The quoted
+        beam corresponds to approximately $0.47\,\mathrm{mW}$ if $I$ is the
+        peak intensity of a Gaussian beam. Once the fixed reference time
+        $t_\star$ has been selected, the reported $1.2$- and $4$-ms exposures
+        must be converted using $\tau=t/t_\star$; they cannot be represented by
+        silently setting the solver's $T=1$ equal to one millisecond.
+
+        If the four reduced parameters $\abg$, $\Gamma(I)$, $\nu$, and
+        $\gamma$ have been calibrated in one convention, no separate $C_6$ or
+        van der Waals length is needed to evaluate the algebraic map.  Those
+        microscopic quantities have already been compressed into its fitted
+        inputs. They become necessary again when the isolated, zero-range
+        reduction fails and a finite-range coupled-channel calculation is
+        required. The minimum experimental data ledger is therefore the signed
+        $\abg$, a level-specific strength calibration, an independently measured
+        light shift, the appropriate total molecular width, and an unambiguous
+        detuning origin.
 
         The experimental isolated-resonance model contains the fitted loss enhancement $\eta_{\rm loss}=19.5$ and a detuning-dependent background loss not present in Eq.~\eqref{eq:ofr-dimensional} \cite{yan2013controlling}. The subscript distinguishes this empirical loss parameter from the pair amplitude $\eta(t)$ in Eq.~\eqref{eq:contact-eta}. The $^{88}\mathrm{Sr}$ prescription is therefore conditional on first verifying the mapping between the measured model and the implemented $\ac(u,v)$, especially the roles of $\Gamma_{\rm stim}$, $\Gamma_{\rm mol}$, and the phenomenological loss terms.
 
         \begin{figure*}[t]
             \centering
-            \figureplaceholder[54mm]{Primary axis: predicted $^{88}\mathrm{Sr}$ molecular yield/fraction versus peak $689$-nm intensity, with a power axis for $w=725\,\mu\mathrm{m}$. Mark $0.057\,\mathrm{W\,cm^{-2}}$ as the literature comparison and the optimized operating point separately. Inset: intensity and detuning waveforms in ms and MHz relative to the $-24$-MHz PA level.}
+            \figureplaceholder[54mm]{Primary axis: predicted $^{88}\mathrm{Sr}$ molecular yield/fraction versus peak $689$-nm intensity, with a power axis for $w=725\,\mu\mathrm{m}$. Mark $0.057\,\mathrm{W\,cm^{-2}}$ as the literature comparison and the optimised operating point separately. Inset: intensity and detuning waveforms in ms and MHz relative to the $-24$-MHz PA level.}
             \caption{Experimental prescription for $^{88}\mathrm{Sr}$. Propagate uncertainty in $\abg$, $\ell_{\rm opt}/I$, density, and collision momentum; state whether the prediction is a dimensionless objective, density, fraction, or absolute molecule number.}
             \label{fig:experimental-recipe}
         \end{figure*}
 
-        \draftnote{Calculate $k_r$ for the final cloud model, convert every optimized $u(t)$ through Eq.~\eqref{eq:intensity-conversion}, and compare the resulting peak power, modulation bandwidth, and duration with Table~\ref{tab:experimental-parameters}. Re-run the dynamics with the measured enhanced and background loss before claiming a quantitative $^{88}\mathrm{Sr}$ molecule yield.}
+        \draftnote{Calculate $k_r$ for the final cloud model, convert every optimised $u(t)$ through Eq.~\eqref{eq:intensity-conversion}, and compare the resulting peak power, modulation bandwidth, and duration with Table~\ref{tab:experimental-parameters}. Re-run the dynamics with the measured enhanced and background loss before claiming a quantitative $^{88}\mathrm{Sr}$ molecule yield.}
 
 %==========================================================
 \section{Discussion}\label{sec:discussion}
@@ -979,85 +1175,455 @@
 
     \subsection{Physical interpretation}
 
-        \draftnote{Explain why the optimal history outperforms simple constant, linear, square-root, or bang--bang trial protocols. Relate the protocol to the competition between building contact and converting correlated pairs into products. If invoking a quantum-Zeno mechanism, show the diagnostic that supports it.}
+        The low- and intermediate-cap controls suggest resonance tracking rather
+        than a two-stage ``prepare then convert'' protocol. For
+        $r_{\rm bg}<0$, increasing $u$ shifts the resonant denominator unless
+        $v$ changes with it; the observed $v\simeq u$ relation compensates this
+        shift while the intensity remains cap-active. The endpoint turn-off
+        lowers both coupling and detuning together. Establishing a more detailed
+        mechanism requires plotting $|\eta|^2$, instantaneous inelastic flux,
+        and cumulative $\Jmol$ from a grid-converged pulse. In particular, the
+        present data do not justify invoking contact preparation or a
+        quantum-Zeno mechanism.
 
-        Compare the cap sweep with the scale-invariant real-$a_s$ onset of Ref.~\cite{qi2021maximum}. Make explicit which aspects remain universal and which are introduced by the optical map, finite decay rate, detuning bound, and control regularization.
-
-    \subsection{Comparison with baseline protocols}
-
-        \begin{table}[H]
-            \caption{Performance comparison at a common duration and cap.}
-            \label{tab:protocol-comparison}
-            \setlength{\tabcolsep}{3pt}
-            \begin{tabular}{>{\raggedright\arraybackslash}p{0.35\columnwidth}>{\raggedright\arraybackslash}p{0.20\columnwidth}>{\raggedright\arraybackslash}p{0.28\columnwidth}}
-                \toprule
-                \textbf{Protocol} & \textbf{$\Jmol$} & \textbf{Relative to optimum} \\
-                \midrule
-                Best constant controls & [insert] & [insert] \\
-                Simple ramp & [insert] & [insert] \\
-                Square-root-inspired & [insert] & [insert] \\
-                Unconstrained baseline & [insert] & [insert] \\
-                Optimized OFR controls & [insert] & $1$ \\
-                \bottomrule
-            \end{tabular}
-        \end{table}
+        The half-order memory dynamics are inherited from the universal
+        short-time description of Ref.~\cite{qi2021maximum}, but the reachable
+        interaction histories are not universal. The complex optical map,
+        spontaneous linewidth, finite detuning range, cap-dependent
+        regularisation, and bounded parameterisation introduce additional
+        scales. Consequently, neither the real-scattering square-root ramp nor
+        its scale-invariant growth law can be assumed to remain optimal in this
+        lossy two-control problem; it must be evaluated as a common baseline
+        after the solver convention is validated.
 
     \subsection{Limitations}
 
-        The final report should assess at least the following limitations:
+        The principal limitations affect different conclusions and should not be
+        combined into one generic uncertainty bar.
         \begin{itemize}
-            \item validity of the universal short-time, zero-range, and dilute-gas approximations;
-            \item neglect of depletion, many-body feedback, trapping inhomogeneity, and additional loss channels;
-            \item accuracy and convention dependence of the two-channel OFR map;
-            \item numerical bias from finite $N$, smoothness selection, bounded parameterization, and local optimization;
-            \item distinction between the finite-difference slew diagnostic and a measured laser transfer function;
-            \item collision-momentum dependence in translating $\Gamma$ to $689$-nm intensity for $^{88}\mathrm{Sr}$; and
-            \item omission of the measured $\eta_{\rm loss}=19.5$ enhancement and far-wing background loss from the implemented optical map.
+            \item \textbf{Reduced optical map.} The calculation retains one
+            $s$-wave entrance channel and one isolated, zero-range molecular
+            state at $E=0$, with constant Markovian decay, weak-field
+            $\Gamma\propto I$, a uniform laser, and no medium correction.  It
+            additionally ties the light shift to the signed resonance strength,
+            $\nu_{\rm re}-\nu=\Gamma_{\rm s}$.  Finite temperature, saturation,
+            power broadening, spatial intensity variation, neighbouring
+            $0_u/1_u$ levels, and independently calibrated AC Stark shifts are
+            therefore absent; Appendix~\ref{app:ofr-map} records the benefit and
+            failure mode of each assumption.
+            \item \textbf{Kernel and initial condition.} The exact
+            noninteracting theory has $\eta(0)=0$, whereas the recurrence starts
+            from $-4\pi\ac(0)$ and uses a kernel coefficient that is not yet
+            reconciled with Eq.~\eqref{eq:dimensionless-kernel-prefactor}. This
+            can change both scale and pulse ranking. An analytic constant-$a_s$
+            or square-root benchmark is required before production claims.
+            \item \textbf{Finite time grid.} The high-cap optimiser develops
+            one-interval features while $\Jmol$ continues to rise, which is
+            consistent with upward discretisation bias. The fixed-control
+            transfer in Fig.~\ref{fig:current-results}(b) is mildly
+            grid-dependent and settles on its two finest grids, but matched
+            reoptimisation across increasing $N$ remains the direct test of the
+            optimised envelope.
+            \item \textbf{Regularisation model.} Equation~\eqref{eq:smoothness}
+            penalises absolute dimensionless controls, so its physical effect
+            changes with the cap. A measured laser transfer function or
+            bandwidth-constrained parameterisation would provide a defensible
+            hardware model.
+            \item \textbf{Local optimisation.} The widening best--median gap
+            shows that rare basin discovery dominates the reported upper
+            envelope. Larger seed populations improve discovery but cannot by
+            themselves establish convergence to a global optimum.
+            \item \textbf{Yield normalisation.} The missing counting prefactor
+            does not change an optimiser under a positive global rescaling, but
+            it prevents conversion of $\Jmol$ into a molecule fraction or
+            number.
+            \item \textbf{Many-body and optical physics.} Depletion, trap
+            inhomogeneity, finite range, the measured
+            $\eta_{\rm loss}=19.5$ enhancement, and far-wing background loss
+            are omitted. These omissions generally make a laboratory yield less
+            favourable than the idealised two-body objective.
+            \item \textbf{Intensity calibration.} The conversion
+            $u\mapsto I$ depends on collision momentum $k_r$ and therefore on
+            the chosen cloud model. Until $k_r$ and $t_\star$ are fixed, the
+            dimensionless pulse has no unique power or duration.
         \end{itemize}
-
-        \draftnote{For each material limitation, state the likely direction of bias and one concrete test or future extension.}
 
     \subsection{Mathematical and computational extensions}
 
-        After the baseline calculation is validated, the Hessian spectrum of $\mathcal{S}$ can quantify poorly constrained control directions more directly than endpoint scatter alone. Hessian-vector products or a reduced-basis eigenspectrum are preferable to forming the full dense Hessian. Quasi-Newton polishing can then be compared fairly with the long Adam anneal. A robust-control extension should maximize an ensemble average, or a risk-sensitive alternative, over calibrated Gaussian laser-amplitude and detuning noise. Physics-informed neural networks remain a possible surrogate for the nonlocal dynamics, but only after their accuracy and cost are benchmarked against the L1 solver.
+        The immediate computational extension is a grid ladder with identical
+        source controls, not a more elaborate optimiser. Once a resolution-safe
+        control basis is established, projected-gradient or L-BFGS polishing can
+        replace millions of small Adam updates. A reduced Hessian spectrum can
+        then quantify poorly constrained pulse directions, and robust control
+        can optimise an ensemble over measured amplitude, detuning, and timing
+        noise. These extensions become scientifically useful only after the
+        forward Volterra solver has an independent benchmark.
 
 %==========================================================
 \section{Conclusion}\label{sec:conclusion}
 %==========================================================
 
-    \draftnote{Write this section only after the figures are final. In one compact paragraph: answer the central question; quote the optimal/plateau yield and crossover cap; state the representative laboratory requirement; summarize robustness; and give the most important limitation. Follow with 2--3 specific next steps.}
-
-    The completed conclusion should distinguish the scientific result---how a physical laser constraint shapes the optimal molecular yield---from the computational deliverable of a validated, reproducible JAX workflow.
+    A bounded optical Feshbach resonance produces a strongly cap-dependent
+    control landscape because intensity changes both channel coupling and the
+    resonance condition. At $N=100$, the cap-40 pulse is repeatedly recovered
+    with a saved dimensionless objective near
+    $\Jmol=\ShowcaseFortyObjective$, and targeted search reaches
+    $\ShowcaseThreeTwentyObjective$ at cap 320, although that selected endpoint
+    is time-limited. The cap-40 control tracks $v\simeq u$ within the assumed
+    tied-shift map, whereas the cap-320 endpoint develops a distinct two-control
+    history. At higher cap,
+    population medians and rare best runs separate sharply, and the cap-1280
+    objective continues to grow through grid-scale pulse structure. Direct
+    forward reevaluation of the fixed selected controls changes modestly by
+    $N=800$, but does not establish matched-grid optimisation convergence. The central
+    answer is therefore conditional: finite optical power clearly shapes the
+    reachable protocol, but the present data do not establish a crossover cap,
+    a saturation yield, or an experimental molecule number. The next decisive
+    steps are to reconcile the kernel and initialisation, reoptimise controls
+    on the finer grids already used for fixed-pulse transfer, and only then restore the
+    $^{88}\mathrm{Sr}$ density, collision-momentum, and counting prefactors.
 
 %==========================================================
 \section*{Author Contributions}
 \addcontentsline{toc}{section}{Author Contributions}
 %==========================================================
 
-    \draftnote{Use the CRediT taxonomy if appropriate. State the student's work and the supervisor's roles in conceptualization, methodology, software, analysis, supervision, and writing.}
+    Charlie Mullen: software, numerical investigation, data curation,
+    visualisation, and writing---original draft. Yangqian Yan:
+    conceptualisation, methodology, supervision, and writing---review and
+    editing.
 
 %==========================================================
 \section*{Acknowledgements}
 \addcontentsline{toc}{section}{Acknowledgements}
 %==========================================================
 
-    \draftnote{Acknowledge the supervisor, collaborators, CUHK programme support, computing resources, and any funding.}
+    The author thanks Prof. Yangqian Yan for supervision and the CUHK Summer
+    Undergraduate Research Programme for supporting the project. Numerical
+    campaigns used the department's shared CPU and GPU computing resources.
 
 %==========================================================
 \section*{Data and Code Availability}
 \addcontentsline{toc}{section}{Data and Code Availability}
 %==========================================================
 
-    The reusable package under \texttt{src/optical\_feshbach\_control/} separates calculations, analysis, plotting, and artifact I/O. Versioned run settings belong in \texttt{configs/}; numerical artifacts in \texttt{results/}; regenerated graphics in \texttt{figures/}; and queue logs in \texttt{logs/}. The $N=100$ calibration notebooks and non-interactive smoothness workflow record the ordered methodology used in this report.
-
-    \draftnote{Add the repository URL or archive DOI, exact commit hash, environment file, commands needed to reproduce every final figure, and any access restrictions.}
+    The reusable package is under \texttt{src/ofc/}; immutable run documents are
+    stored in \texttt{run\_config/}, numerical arrays and metadata in
+    \texttt{results/}, run logs in \texttt{logs/}, and notebook interfaces in
+    \texttt{scripts/}. The report figures are regenerated by
+    \texttt{reports/scripts/generate\_figure1.py} and
+    \texttt{reports/scripts/generate\_showcase\_results.py}. The second script
+    also writes \texttt{showcase\_results\_metadata.json}, which records the
+    exact database, configuration document, queue, run status, and summary
+    values behind Fig.~\ref{fig:current-results}. A public repository URL or
+    archival DOI and the final commit identifier should be added at submission.
 
 %==========================================================
 \appendix
-\section{Nondimensionalization and Conventions}\label{app:nondimensionalization}
+%==========================================================
+\section{Origin, Checks, and Scope of the Optical Map}
+\label{app:ofr-map}
 %==========================================================
 
-    \draftnote{Extend the dimensional audit above to the contact and molecular-yield normalizations. Track the sign of the imaginary scattering length and all factors of $2$, $\pi$, $\hbar$, and mass, then verify the ledger against the implementation.}
+    This appendix makes explicit which parts of the optical map follow from a
+    two-channel calculation and which parts are additional control-model
+    assumptions.  Throughout the derivation only, set $\hbar=1$, so energies,
+    detunings, linewidths, and rates have the same units.  Factors of $\hbar$
+    are restored when dimensional experimental quantities are discussed.
+
+    \subsection{Two-channel origin}
+
+        Let $\hat b_{\mathbf k}$ annihilate a ground-state atom and
+        $\hat d_{\mathbf q}$ an excited molecule.  The open-channel contact
+        strength is $g$, the laser-induced atom--molecule coupling is $\alpha$,
+        the bare molecular detuning is $\nu$, the molecular decay rate is
+        $\gamma$, the atomic mass is $m$, and the quantisation volume is
+        $\Omega$.  A minimal Hermitian Hamiltonian is
+        \begin{align}
+            \widehat H_{\rm OFR}={}&
+            \sum_{\mathbf k}\epsilon_{\mathbf k}
+                \hat b^\dagger_{\mathbf k}\hat b_{\mathbf k}
+            +\sum_{\mathbf q}\left(\frac{q^2}{4m}+\nu\right)
+                \hat d^\dagger_{\mathbf q}\hat d_{\mathbf q}\nonumber\\
+            &+\frac{g}{2\Omega}
+            \sum_{\mathbf k,\mathbf k',\mathbf p}
+                \hat b^\dagger_{\mathbf k+\mathbf p}
+                \hat b^\dagger_{\mathbf k'-\mathbf p}
+                \hat b_{\mathbf k'}\hat b_{\mathbf k}\nonumber\\
+            &+\frac{1}{\sqrt{\Omega}}
+            \sum_{\mathbf k,\mathbf q}\left[
+                \alpha\hat d^\dagger_{\mathbf q}
+                \hat b_{\mathbf q/2-\mathbf k}
+                \hat b_{\mathbf q/2+\mathbf k}+\mathrm{H.c.}
+            \right],
+            \label{eq:appendix-ofr-hamiltonian}
+        \end{align}
+        where $\epsilon_{\mathbf k}=k^2/(2m)$.  The two collision paths are
+        direct background scattering and optical conversion of an atom pair to
+        the molecular state and back.  In the two-body sector, irreversible
+        molecular decay is represented by
+        \begin{equation}
+            \widehat H_{\rm 2b}=\widehat H_{\rm OFR}
+            -\frac{\ii\gamma}{2}\sum_{\mathbf q}
+                \hat d^\dagger_{\mathbf q}\hat d_{\mathbf q}.
+            \label{eq:appendix-nonhermitian-hamiltonian}
+        \end{equation}
+        This is the no-jump two-body Hamiltonian associated with the molecular
+        Lindblad decay; the imaginary energy $-\ii\gamma/2$ is not an additional
+        coherent light shift \cite{liu2024weakly}.
+
+        Eliminating the molecule at relative collision energy $E$ produces the
+        energy-dependent open-channel interaction
+        \begin{equation}
+            U_{\rm eff}(E)=g+
+            \frac{|\alpha|^2}{E-\nu+\ii\gamma/2}.
+            \label{eq:appendix-effective-interaction}
+        \end{equation}
+        The corresponding vacuum $T$ matrix is
+        \begin{align}
+            T(E)&=\left[U_{\rm eff}^{-1}(E)-\Pi(E)\right]^{-1},
+            \label{eq:appendix-t-matrix}\\
+            \Pi(E)&=\frac{1}{\Omega}\sum_{\mathbf k}
+            \frac{1}{E-k^2/m+\ii0^+}.
+            \label{eq:appendix-pair-propagator}
+        \end{align}
+        Because the contact model has no spatial range, $\Pi(E)$ is ultraviolet
+        divergent.  Thus $g$, $\alpha$, and $\nu$ are bare quantities and
+        cannot be inserted directly into a numerical prediction.
+
+        Match Eq.~\eqref{eq:appendix-t-matrix} to the low-energy $s$-wave
+        convention
+        \begin{equation}
+            T(E)=\frac{4\pi}{m}
+            \frac{1}{\ac^{-1}(E)+\ii k},
+            \qquad k=\sqrt{mE}.
+            \label{eq:appendix-low-energy-t}
+        \end{equation}
+        With a momentum cutoff $\Lambda$, the zero-range renormalisation can be
+        written
+        \begin{align}
+            \ac(E)&=\abg+
+            \frac{m|\alpha_{\rm re}|^2}{4\pi}
+            \frac{1}{E-\nu_{\rm re}+\ii\gamma/2},
+            \label{eq:appendix-renormalised-ac}\\
+            \frac{m}{4\pi\abg}&=\frac{1}{g}+\frac{m\Lambda}{2\pi^2},
+            \label{eq:appendix-renormalised-background}\\
+            |\alpha_{\rm re}|^2&=
+            \frac{|\alpha|^2}{[1+mg\Lambda/(2\pi^2)]^2},
+            \label{eq:appendix-renormalised-coupling}\\
+            \nu_{\rm re}&=\nu-
+            \frac{m\Lambda|\alpha|^2}{2\pi^2+mg\Lambda}.
+            \label{eq:appendix-renormalised-detuning}
+        \end{align}
+        The cutoff dependence is thereby absorbed into the three observable
+        low-energy parameters.  Defining the signed resonant strength
+        \begin{equation}
+            \Gamma_{\rm s}(I)=
+            \frac{m|\alpha_{\rm re}(I)|^2}{4\pi\abg}
+            \label{eq:appendix-signed-gamma}
+        \end{equation}
+        turns Eq.~\eqref{eq:appendix-renormalised-ac} into the dimensional
+        one-pole map
+        \begin{equation}
+            \ac(E)=\abg\left[1+
+            \frac{\Gamma_{\rm s}(I)}
+            {E-\nu_{\rm re}(I)+\ii\gamma/2}\right].
+            \label{eq:appendix-one-pole-map}
+        \end{equation}
+        Since $|\alpha_{\rm re}|^2\propto I$ in the weak-field regime,
+        $|\Gamma_{\rm s}|\propto I$.  Equation~\eqref{eq:appendix-one-pole-map}
+        follows from the reduced two-channel model.  The further identification
+        \begin{equation}
+            \nu_{\rm re}(I)\equiv\nu+\Gamma_{\rm s}(I)
+            \label{eq:appendix-tied-shift}
+        \end{equation}
+        is a particular parameterisation of the renormalised molecular energy.
+        It is not forced by Eqs.~\eqref{eq:appendix-renormalised-background}--
+        \eqref{eq:appendix-renormalised-detuning}, nor is it a general physical
+        identity between an optical linewidth and an AC Stark shift.
+
+        Applying Eq.~\eqref{eq:appendix-tied-shift} and then the threshold limit
+        $E\rightarrow0$ yields the outline's formula,
+        \begin{equation}
+            \ac(I,\nu)=\abg\left[1+
+            \frac{\Gamma_{\rm s}(I)}
+            {-\nu-\Gamma_{\rm s}(I)+\ii\gamma/2}\right].
+            \label{eq:appendix-outline-map}
+        \end{equation}
+        Thus the $-\Gamma_{\rm s}$ in the denominator records the tied-shift
+        convention.  It should not be read as evidence that every physical OFR
+        has a light shift equal to its resonant strength.
+
+    \subsection{Loss sign and the implementation convention}
+
+        The microscopic definition in Eq.~\eqref{eq:appendix-signed-gamma}
+        makes $\Gamma_{\rm s}$ have the same sign as $\abg$.  This point matters
+        for $^{88}\mathrm{Sr}$, where $\abg<0$ and therefore
+        $\Gamma_{\rm s}<0$.  The code avoids a signed intensity bound by
+        defining
+        \begin{equation}
+            s=\operatorname{sgn}(\abg),\qquad
+            \Gamma=|\Gamma_{\rm s}|\geq0,qquad
+            \Gamma_{\rm s}=s\Gamma.
+            \label{eq:appendix-code-gamma}
+        \end{equation}
+        Substitution in Eq.~\eqref{eq:appendix-outline-map} gives exactly the
+        implemented dimensional map, Eq.~\eqref{eq:ofr-dimensional}.  Hence the
+        code constraint $0\leq\Gamma\leq\Gamma_{\max}$ is a bound on a
+        magnitude; it is equivalent to
+        $|\Gamma_{\rm s}|\leq\Gamma_{\max}$ in the microscopic convention.
+
+        To expose the elastic and lossy parts, write
+        $G=\Gamma_{\rm s}$, $\delta=\nu+G$, and $h=\gamma/2$.  Then
+        \begin{align}
+            \operatorname{Re}\ac
+            &=\abg\left[1-
+              \frac{G\delta}{\delta^2+h^2}\right],
+            \label{eq:appendix-real-ac}\\
+            \operatorname{Im}\ac
+            &=-\abg\frac{Gh}{\delta^2+h^2}.
+            \label{eq:appendix-imag-ac}
+        \end{align}
+        With $\ac=a-\ii b$ and $b\geq0$, one has
+        \begin{equation}
+            b=\abg\frac{G\gamma/2}
+            {(\nu+G)^2+(\gamma/2)^2}\geq0,
+            \label{eq:appendix-loss-length}
+        \end{equation}
+        because
+        $\abg G=m|\alpha_{\rm re}|^2/(4\pi)>0$.  Equivalently, the code's
+        $G=s\Gamma$ guarantees $\operatorname{Im}\ac\leq0$ for either sign of
+        $\abg$.  Constraining a \emph{signed} $G\geq0$ while also using
+        $\abg<0$ would instead violate this condition; that is not what the
+        present implementation does.
+
+        The dimensionless form follows with $u=\Gamma/\gamma$ and
+        $v=\nu/\gamma$:
+        \begin{align}
+            \frac{\ac}{\abg}
+            &=1+\frac{s u}{-v-s u+\ii/2},
+            \label{eq:appendix-dimensionless-ac}\\
+            \operatorname{Re}\frac{\ac}{\abg}
+            &=1-\frac{s u(v+s u)}{(v+s u)^2+1/4},
+            \label{eq:appendix-dimensionless-real}\\
+            \operatorname{Im}\frac{\ac}{\abg}
+            &=-\frac{s u/2}{(v+s u)^2+1/4}.
+            \label{eq:appendix-dimensionless-imag}
+        \end{align}
+        For $^{88}\mathrm{Sr}$, $s=-1$ and the resonant denominator is
+        $u-v+\ii/2$, explaining why a model-internal resonance-tracking
+        trajectory satisfies $v\simeq u$.
+
+    \subsection{Limiting-case checks}
+
+        These identities are useful independent checks on both the algebra and
+        the implementation.
+        \begin{itemize}
+            \item \textbf{No laser.} At fixed detuning,
+            $\Gamma\rightarrow0$ gives $\ac\rightarrow\abg$.
+            \item \textbf{Far from resonance.} For
+            $|\nu+G|\gg\gamma$,
+            \begin{equation}
+                \ac\simeq\abg\left[1-\frac{G}{\nu+G}
+                -\ii\frac{G\gamma}{2(\nu+G)^2}\right].
+            \end{equation}
+            If also $|\nu|\gg|G|$, the elastic correction falls as
+            $1/\nu$ while loss falls as $1/\nu^2$.
+            \item \textbf{No molecular decay.} For $\gamma=0$,
+            \begin{equation}
+                \ac=\abg\frac{\nu}{\nu+G}.
+                \label{eq:appendix-lossless-limit}
+            \end{equation}
+            The zero is at $\nu=0$ and the pole at $\nu=-G$.  In particular,
+            the fraction is $\nu/(\nu+G)$, not its reciprocal.
+            \item \textbf{Finite molecular decay.} When $\gamma>0$, no real
+            detuning produces a pole. The absorptive response is largest at
+            $\delta=\nu+G=0$, while the pole lies off the real detuning axis.
+        \end{itemize}
+
+    \subsection{Assumption ledger}
+
+        Table~\ref{tab:ofr-assumptions} separates the computational benefits of
+        the reduction from the corresponding limits on interpretation.  The
+        map is attractive for optimal control precisely because it is algebraic,
+        differentiable, and ties elastic response to loss.  Those virtues do
+        not make its high-intensity or far-detuned extrapolation quantitative.
+
+        \begin{table*}[!t]
+            \caption{Physical assumptions in the implemented optical map.}
+            \label{tab:ofr-assumptions}
+            \scriptsize
+            \setlength{\tabcolsep}{3.5pt}
+            \renewcommand{\arraystretch}{1.18}
+            \begin{tabular}{>{\raggedright\arraybackslash}p{0.15\textwidth}>{\raggedright\arraybackslash}p{0.23\textwidth}>{\raggedright\arraybackslash}p{0.22\textwidth}>{\raggedright\arraybackslash}p{0.30\textwidth}}
+                \toprule
+                \textbf{Assumption} & \textbf{Physical content} & \textbf{Benefit} & \textbf{Limitation} \\
+                \midrule
+                Two channels / one isolated state & One atomic entrance channel couples to one excited molecular level. & One resonance denominator; transparent gradients and interpretation. & Nearby $0_u$ and $1_u$ levels and continua interfere. For $^{88}\mathrm{Sr}$ the approximation holds only when detuning is small relative to the molecular-level spacing; otherwise coupled channels are required. \\
+                $s$-wave scattering & Only the $\ell=0$ partial wave is retained. & Correct threshold channel for sufficiently cold identical bosons. & Higher partial waves can contribute as temperature or collision energy rises. \\
+                Zero collision energy & $E\rightarrow0$ and one complex length characterises scattering. & Removes an energy dimension from the optimisation. & Omits thermal averaging and effective-range corrections; a finite-temperature calculation must evaluate Eq.~\eqref{eq:appendix-one-pole-map} over the collision-energy distribution. \\
+                Zero range & Molecular potentials are replaced by contact couplings. & Fast, analytic, differentiable, and inexpensive in JAX. & $C_6$, $R_{\rm vdW}$, $E_{\rm vdW}$, and the free--bound Franck--Condon wavefunction are not explicit. They are compressed into fitted parameters and re-enter if those parameters are not known or the reduction fails. \\
+                Constant Markovian decay & The molecular energy contains a fixed $-\ii\gamma/2$. & Produces a complex scattering length and irreversible loss automatically. & Omits energy-, intensity-, time-, and detuning-dependent decay, technical laser broadening, predissociation, collisions, and non-Markovian effects. \\
+                Weak-field scaling & $|\Gamma_{\rm s}|=\kappa I$ with constant $\kappa>0$. & Turns a laser-power limit into $0\leq\Gamma\leq\Gamma_{\max}$. & Saturation, power broadening, nonlinear AC Stark shifts, neighbouring-level coupling, and intensity-dependent decay are absent. \\
+                Shift tied to strength & $\nu_{\rm re}-\nu=\Gamma_{\rm s}$ uses one parameter for coupling strength and the resonance-centre shift. & Leaves only the two controls $\Gamma(t)$ and $\nu(t)$. & A general OFR has separately calibrated resonant strength and light shift; measured $^{88}\mathrm{Sr}$ shifts are strongly level dependent and even change sign. \\
+                Uniform laser & Every pair experiences one intensity, detuning, and polarisation. & Produces a single control waveform. & A trapped cloud samples spatially varying intensity and density; beam propagation and polarisation impurity are ignored. \\
+                Vacuum two-body physics & No depletion or density-dependent medium correction modifies the scattering map. & Clean low-density connection between laser controls and $\ac$. & Can fail in a dense, depleted, or strongly interacting gas; the yield functional then needs a self-consistent many-body treatment. \\
+                \bottomrule
+            \end{tabular}
+        \end{table*}
+
+    \subsection{$^{88}\mathrm{Sr}$ substitution and detuning origin}
+
+        Once the reduced parameters are known, evaluating the map requires no
+        separate van der Waals table.  A minimal input set is the signed
+        background length, molecular decay rate, level-specific mapping from
+        intensity to $\Gamma$, light-shift calibration, detuning origin, and one
+        consistent frequency convention.  For the central
+        $\abg=-1.4a_0$ value and the code's positive magnitude
+        $\Gamma_f\geq0$, Eq.~\eqref{eq:ofr-dimensional} becomes
+        \begin{equation}
+            \frac{\ac}{a_0}=-1.4\left[
+            1-\frac{\Gamma_f}
+            {\Gamma_f-\nu_f+\ii\gamma_f/2}\right],
+            \label{eq:appendix-sr-explicit}
+        \end{equation}
+        where all subscript-$f$ quantities are ordinary frequencies.  Use
+        $\gamma_f/2=7.5\,\mathrm{kHz}$ for an ideal
+        $15\,\mathrm{kHz}$ molecular line or
+        $\gamma_f/2=20\,\mathrm{kHz}$ for the central experimentally fitted
+        $40\,\mathrm{kHz}$ line.  The same equation may instead be evaluated in
+        angular frequency after multiplying \emph{every} denominator term by
+        $2\pi$.
+
+        In the signed microscopic notation the shifted detuning is
+        $\delta=\nu+\Gamma_{\rm s}$; in the code notation it is
+        $\delta=\nu+s\Gamma$.  An experimental detuning may instead be quoted
+        from the zero-intensity molecular line, the intensity-shifted line, the
+        atomic $^1S_0\rightarrow{}^3P_1$ threshold, or a fitted photoassociation
+        centre. These are not interchangeable.  The measured $0_u$ shift
+        slopes for $n=-2,-3,-4$ are respectively about $-251(67)$,
+        $+29(2)$, and $+4(1)\,\mathrm{kHz}/(\mathrm{W\,cm^{-2}})$
+        \cite{blatt2011measurement}; their variation directly demonstrates why
+        the tied shift in Eq.~\eqref{eq:appendix-tied-shift} must be tested rather
+        than assumed during quantitative experimental translation.
+
+        The practical conclusion is twofold.  The present map is a useful
+        simplified theoretical control model: it has the correct qualitative
+        background, dispersive, resonant-loss, and far-detuned structures and
+        is well suited to automatic differentiation.  A mathematically optimal
+        trajectory becomes a proposed $^{88}\mathrm{Sr}$ laser protocol only
+        after the strength, light shift, linewidth, detuning origin, temperature
+        range, and high-intensity response have all been calibrated for one
+        selected molecular level.
+
+%==========================================================
+\section{Nondimensionalisation and Conventions}\label{app:nondimensionalisation}
+%==========================================================
+
+    \draftnote{Complete the remaining contact and product-counting normalisation
+    audit.  The optical-map sign and Hz-versus-rad/s conventions are derived in
+    Appendix~\ref{app:ofr-map}; the unresolved issue here is the prefactor that
+    converts lost-pair flux into counted product molecules.}
 
     \begin{table}[H]
         \caption{Symbol and unit ledger for the final derivation.}
@@ -1068,11 +1634,12 @@
             \textbf{Symbol} & \textbf{Meaning} & \textbf{Unit/scale} \\
             \midrule
             $\abg$ & background scattering length & $-1.4(6)a_0$ \\
-            $\ac$ & complex scattering length & length; scale $|\abg|$ \\
-            $\gamma$ & molecular decay rate & $2\pi\times15\,\mathrm{kHz}$ \\
-            $\Gamma$ & stimulated optical width & $2k_r\ell_{\rm opt}\Gamma_{\rm mol}$ \\
-            $\nu$ & detuning from $-24$-MHz PA level & angular frequency \\
-            $\eta(t)$ & short-range pair amplitude & length; scale $|\abg|$ \\
+            $\ac$ & complex scattering length & length; scale $\ell_\star$ \\
+            $\gamma$ & molecular decay rate & showcase: $40{,}000\,\mathrm{Hz}$; ideal: $2\pi\times15\,\mathrm{kHz}$ in angular units \\
+            $\Gamma$ & non-negative stimulated-width magnitude & $2k_r\ell_{\rm opt}\Gamma_{\rm mol}$; same frequency convention as $\gamma$ \\
+            $\Gamma_{\rm s}$ & signed microscopic resonant strength & $s\Gamma$ with $s=\operatorname{sgn}(\abg)$ \\
+            $\nu$ & model detuning from the selected PA level & same frequency convention as $\gamma$ \\
+            $\eta(t)$ & short-range pair amplitude & length; scale $\ell_\star$ \\
             $\mathcal{C}$ & Tan-contact density & inverse length$^4$ \\
             $\Jmol$ & current yield objective & dimensionless; prefactor unresolved \\
             \bottomrule
@@ -1086,7 +1653,7 @@
     \draftnote{Derive the L1 weights and recurrence in Eqs.~\eqref{eq:l1-weights}--\eqref{eq:l1-update}. State how the endpoint singularity is handled, why the newest increment enters the denominator, and the memory/time complexity of the scan.}
 
 %==========================================================
-\section{Additional Optimization Diagnostics}\label{app:diagnostics}
+\section{Additional Optimisation Diagnostics}\label{app:diagnostics}
 %==========================================================
 
     \draftnote{Place full per-seed convergence plots, zero-yield diagnostics, raw- versus bounded-control stability, alternative schedules, raw-space line scans, smoothness sensitivity, and higher-resolution cap-sweep tables here. Keep only decision-relevant summaries in the main text.}
@@ -1097,16 +1664,16 @@
 
     \begin{enumerate}
         \item Record the repository commit and Python environment.
-        \item Freeze the learning-rate, smoothness, convergence, and initialization settings.
+        \item Freeze the learning-rate, smoothness, convergence, and initialisation settings.
         \item Save run-level CSV/JSON data before plotting.
         \item Label every result by grid, seed, cap, and configuration.
-        \item Regenerate report figures from saved numerical artifacts.
+        \item Regenerate report figures from saved numerical artefacts.
         \item Confirm that all reported headline values can be read from an archived table.
     \end{enumerate}
 
 % The following temporary analysis used |a_bg| as the reference length and is
 % retained in the source history only. It is superseded by the fixed-time
-% nondimensionalization below and intentionally omitted from the report.
+% nondimensionalisation below and intentionally omitted from the report.
 \iffalse
 %==========================================================
 \section{Superseded Note: Unknown Background Scattering Length and a Generic Reference Scale}
@@ -1114,7 +1681,7 @@
 %==========================================================
 
     \textbf{Status of this note.} This section is a temporary explanation of the
-    nondimensionalization issue and should be reconciled with
+    nondimensionalisation issue and should be reconciled with
     Sec.~\ref{sec:model} before the final report is submitted.  Its main point is
     that a reference length is a freely chosen positive unit, whereas the sign
     and magnitude of the background scattering length are physical inputs.  A
@@ -1161,7 +1728,7 @@
         \begin{equation}
             a_s=a_{\rm bg}+|a_{\rm bg}|R(u,v).
         \end{equation}
-        A generic nondimensionalization contains both the signed background
+        A generic nondimensionalisation contains both the signed background
         ratio and its positive magnitude,
         \begin{equation}\label{eq:temporary-background-ratio}
             b=\frac{a_{\rm bg}}{L_0},
@@ -1176,7 +1743,7 @@
             \right]\widetilde\eta(\tau)=-1.
         \end{equation}
         Thus $b$ is an input to the dynamics.  Its sign cannot be inferred by
-        nondimensionalization, and changing its sign is not a constant
+        nondimensionalisation, and changing its sign is not a constant
         conversion applied after the calculation.  It changes the complex
         scattering-length history seen by the Volterra equation and can change
         both $\widetilde\eta$ and the optimal controls.  A genuinely
@@ -1221,7 +1788,7 @@
         $\widetilde\eta$ and the optimal controls through the real background
         offset.
 
-    \subsection{Does changing the reference length change the optimization?}
+    \subsection{Does changing the reference length change the optimisation?}
 
         Merely changing $L_0$ does not change a fixed physical problem when
         every dimensionless quantity is transformed consistently.  For a
@@ -1239,7 +1806,7 @@
         By contrast, changing $L_0$ while retaining $T=1$ changes the physical
         duration to $t_{\rm f}=mL_0^2/\hbar$.  Likewise, replacing an unknown
         $b$ by $+1$ chooses a positive-background model.  These changes affect
-        the optimization itself and are not post-processing conversions.  In
+        the optimisation itself and are not post-processing conversions.  In
         the present numerical implementation, $T$ enters the time step, the
         history kernel, the objective integral, and the smoothness penalty, so
         it cannot generally be altered only when plotting the final result.
@@ -1259,7 +1826,7 @@
             and a desired laboratory duration are selected, use
             Eq.~\eqref{eq:temporary-duration-conversion} to determine its
             appropriate value.
-            \item Optimize using
+            \item Optimise using
             $\widetilde a_s=b+|b|R(u,v)$ in the Volterra recurrence and in the
             molecular objective.  With $L_0=|a_{\rm bg}|$, this reduces to
             $\widetilde a_s=s+R(u,v)$.  The recurrence algorithm does not need
@@ -1306,9 +1873,8 @@
     With $s=\operatorname{sgn}(r_{\rm bg})$, the code evaluates
     \begin{equation}
         \widetilde a_s
-        =|r_{\rm bg}|\left[
-            s+\frac{s u}{-s u-v-\ii/2}
-        \right].
+        =r_{\rm bg}\left[1+\frac{s u}{-s u-v+\ii/2}\right]
+        =|r_{\rm bg}|\left[s+\frac{u}{-s u-v+\ii/2}\right].
     \end{equation}
     The prefactor is $|r_{\rm bg}|$ because $r_{\rm bg}$ itself is signed;
     this guarantees the far-detuned or zero-width limit
@@ -1316,10 +1882,12 @@
     $s$ would be undefined, and there is no independent sign parameter in the
     configuration.
 
-    Finally, regularization is applied to the normalized curves
-    $u/u_{\max}$ and $v/v_{\max}$ over normalized time $t/T$. Therefore a
-    common relative pulse shape has one smoothness cost independent of its
-    dimensional duration, linewidth conversion, and absolute control caps.
+    Finally, the present regulariser is applied to first and second differences
+    of the absolute dimensionless controls $u$ and $v$, with powers of the
+    dimensionless time step shown in Eq.~\eqref{eq:smoothness}.  It is therefore
+    not invariant under a change of control cap or duration; this cap dependence
+    is one reason the regularisation search is treated as part of the numerical
+    methodology rather than as a calibrated hardware transfer function.
 
 %----------------------------------------------------------
 \printbibliography

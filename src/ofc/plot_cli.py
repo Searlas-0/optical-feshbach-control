@@ -20,7 +20,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 def build_parser():
     parser = argparse.ArgumentParser(
-        description="Create the standard convergence, yield-distribution, and control figures."
+        description="Create the unified score, objective-strip, and control summary."
     )
     parser.add_argument("--database", default=str(PROJECT_ROOT / "results/results.sqlite3"))
     parser.add_argument("--run-id", action="append", type=int, default=[])
@@ -42,7 +42,7 @@ def build_parser():
     parser.add_argument(
         "--sweep-parameter",
         help=(
-            "Parameter to use for sweep colours and the Figure 2 x-axis. "
+            "Parameter used to split the unified summary into sweep rows. "
             "It is inferred when exactly one configuration parameter varies; "
             "otherwise initializations are numbered as a categorical sweep."
         ),

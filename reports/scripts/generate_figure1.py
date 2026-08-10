@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Generate Figure 1, the optical-Feshbach control schematic.
+"""Generate the two-channel optical-Feshbach schematic used in the report.
 
-The default output path is resolved relative to this file, so the script can
-be run from either the repository root or the ``reports`` directory.
+The drawing follows the energy-landscape logic of Fig. 1 in Chin et al., Rev.
+Mod. Phys. 82, 1225 (2010), but adapts it to a photon-dressed closed channel.
+It is a conceptual diagram rather than a fitted molecular potential.
 """
 
 from __future__ import annotations
@@ -16,193 +17,143 @@ matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
 import numpy as np
-from matplotlib.patches import FancyArrowPatch, Polygon
+from matplotlib.patches import FancyArrowPatch
 
 
 REPORT_DIR = Path(__file__).resolve().parents[1]
 DEFAULT_OUTPUT = REPORT_DIR / "figures" / "figure1_ofr_schematic.pdf"
 
+NAVY = "#143D66"
+BLUE = "#2474A6"
+RED = "#B6403A"
+GOLD = "#D49A22"
 
-def scattering_ratio(u: float, v: np.ndarray) -> np.ndarray:
-    """Return a_c/a_bg for dimensionless intensity u and detuning v."""
 
-    return 1.0 + u / (-v - u + 0.5j)
+def _style_axis(axis: plt.Axes) -> None:
+    axis.spines[["top", "right"]].set_visible(False)
+    axis.spines[["left", "bottom"]].set_color("#7E8791")
+    axis.spines[["left", "bottom"]].set_linewidth(0.65)
+    axis.tick_params(labelsize=6.0, width=0.55, length=2.2, pad=1.6)
 
 
-def draw_level_diagram(ax: plt.Axes) -> None:
-    """Draw the open/closed-channel optical coupling in panel (a)."""
+def draw_channel_potentials(axis: plt.Axes) -> None:
+    """Draw a clear open/closed-channel energy landscape."""
 
-    blue = "#2474A6"
-    red = "#B6403A"
-    gold = "#D49A22"
-    grey = "#5B6573"
+    separation = np.linspace(0.18, 1.25, 900)
 
-    ax.set_xlim(0.0, 1.0)
-    ax.set_ylim(0.0, 1.0)
-    ax.axis("off")
-
-    # The slight slope and multiple levels indicate an open-channel continuum.
-    continuum = Polygon(
-        [(0.04, 0.13), (0.56, 0.19), (0.56, 0.32), (0.04, 0.26)],
-        closed=True,
-        facecolor="#DCECF4",
-        edgecolor="none",
-        zorder=0,
+    # Smooth model curves chosen only to communicate two distinct thresholds
+    # and a closed-channel molecular well. They are not fitted Sr2 potentials.
+    sigma = 0.30
+    open_potential = 0.26 * (
+        (sigma / separation) ** 12 - 2.0 * (sigma / separation) ** 6
     )
-    ax.add_patch(continuum)
-    for offset in (0.02, 0.055, 0.09):
-        ax.plot(
-            [0.06, 0.53],
-            [0.15 + offset, 0.21 + offset],
-            color=blue,
-            lw=0.75,
-            alpha=0.8,
-        )
-    ax.text(
-        0.05,
-        0.08,
-        r"open-channel continuum $|o\rangle$",
-        color=blue,
-        fontsize=6.2,
+    closed_potential = 0.62 + 0.52 * (
+        (1.0 - np.exp(-7.0 * (separation - 0.43))) ** 2 - 1.0
+    )
+
+    axis.axhline(0.0, color="#8E969F", lw=0.65, ls=(0, (2.2, 2.2)), zorder=0)
+    axis.plot(separation, open_potential, color=BLUE, lw=2.0, zorder=3)
+    axis.plot(separation, closed_potential, color=RED, lw=2.0, zorder=3)
+
+    collision_energy = 0.035
+    closed_energy = 0.30
+    axis.plot([0.58, 1.21], [collision_energy] * 2, color=BLUE, lw=1.35)
+    # Centre the schematic bound-state segment on the minimum of the closed
+    # potential (R ~= 0.43), rather than letting it drift onto the outer wing.
+    axis.plot([0.25, 0.61], [closed_energy] * 2, color=RED, lw=1.55)
+
+    axis.text(
+        0.84,
+        -0.115,
+        r"open entrance potential $V_o(R)$",
+        color=BLUE,
+        fontsize=7.1,
+        ha="center",
+    )
+    axis.text(
+        0.76,
+        0.765,
+        r"photon-dressed closed potential  $V_c(R)-\hbar\omega_L$",
+        color=RED,
+        fontsize=6.8,
+        ha="center",
+    )
+    axis.text(
+        0.60,
+        collision_energy - 0.045,
+        r"$E\simeq0$",
+        color=BLUE,
+        fontsize=7.2,
         ha="left",
-        va="center",
+        va="top",
     )
-
-    # The laser photon reaches a virtual energy (dashed); nu is its detuning
-    # from the excited molecular level.
-    ax.plot([0.16, 0.63], [0.82, 0.82], color=red, lw=2.0, solid_capstyle="round")
-    ax.text(
-        0.16,
-        0.88,
-        r"excited molecule $|c\rangle$",
-        color=red,
-        fontsize=6.2,
-        ha="left",
-        va="center",
+    axis.text(
+        0.43,
+        closed_energy + 0.055,
+        r"molecular level $E_c(\nu)$",
+        color=RED,
+        fontsize=6.8,
+        ha="center",
     )
-    ax.plot([0.14, 0.64], [0.68, 0.68], color=grey, lw=0.8, ls=(0, (2, 2)))
-    ax.text(0.15, 0.605, r"laser energy $\hbar\omega_L$", color=grey, fontsize=5.7)
-
-    detuning = FancyArrowPatch(
-        (0.58, 0.685),
-        (0.58, 0.815),
-        arrowstyle="<->",
-        mutation_scale=6,
-        color=grey,
-        lw=0.8,
-    )
-    ax.add_patch(detuning)
-    ax.text(0.605, 0.75, r"$\hbar\nu$", color=grey, fontsize=6.2, va="center")
 
     coupling = FancyArrowPatch(
-        (0.34, 0.30),
-        (0.34, 0.805),
-        arrowstyle="-|>",
-        mutation_scale=7,
-        color=gold,
-        lw=1.5,
+        (0.595, collision_energy + 0.012),
+        (0.595, closed_energy - 0.012),
+        arrowstyle="<->",
+        mutation_scale=7.5,
+        color=GOLD,
+        lw=1.3,
+        zorder=5,
     )
-    ax.add_patch(coupling)
-    ax.text(0.365, 0.48, r"$W(I)$", color="#966A10", fontsize=6.4, va="center")
-    ax.text(
-        0.365,
-        0.405,
-        r"$\Gamma(I)\!\propto\!|W|^2$",
+    axis.add_patch(coupling)
+    axis.text(
+        0.62,
+        0.17,
+        r"intensity coupling $W(I)$",
         color="#966A10",
-        fontsize=5.8,
+        fontsize=6.6,
         va="center",
     )
 
-    decay = FancyArrowPatch(
-        (0.62, 0.81),
-        (0.84, 0.42),
-        arrowstyle="-|>",
-        connectionstyle="arc3,rad=-0.16",
-        mutation_scale=7,
-        color=red,
-        lw=1.2,
+    mismatch = FancyArrowPatch(
+        (1.03, collision_energy),
+        (1.03, closed_energy),
+        arrowstyle="<->",
+        mutation_scale=7.0,
+        color=GOLD,
+        lw=1.0,
     )
-    ax.add_patch(decay)
-    ax.text(0.73, 0.66, r"decay $\gamma$", color=red, fontsize=6.2, rotation=-39)
-    ax.text(0.80, 0.37, "loss channels", color=red, fontsize=5.5, ha="center")
-
-    ax.text(0.0, 0.98, "(a)", fontsize=7.2, fontweight="bold", va="top")
-
-
-def draw_accessible_loci(ax: plt.Axes) -> None:
-    """Plot the linked real and imaginary scattering-length quadratures."""
-
-    colours = ["#5AA6C8", "#2474A6", "#143D66"]
-    intensities = [0.25, 0.55, 1.0]
-    v = np.linspace(-20.0, 20.0, 2400)
-
-    # For 0 <= u <= 1 and unrestricted v, the accessible set is the disk
-    # bounded by the u=1 locus: (Re z - 1)^2 + (Im z + 1)^2 <= 1.
-    theta = np.linspace(0.0, 2.0 * np.pi, 500)
-    boundary_x = 1.0 + np.cos(theta)
-    boundary_y = -1.0 + np.sin(theta)
-    ax.fill(boundary_x, boundary_y, color="#DCECF4", alpha=0.58, lw=0)
-
-    for colour, u in zip(colours, intensities, strict=True):
-        ratio = scattering_ratio(u, v)
-        ax.plot(ratio.real, ratio.imag, color=colour, lw=1.15, label=rf"$u={u:g}$")
-
-    # Mark several detunings on one locus to show that v moves the operating
-    # point while u selects its circle.
-    selected_u = 0.55
-    selected_v = np.array([-1.5, -0.55, 0.5])
-    selected = scattering_ratio(selected_u, selected_v)
-    ax.scatter(
-        selected.real,
-        selected.imag,
-        s=9,
-        facecolor="white",
-        edgecolor=colours[1],
-        linewidth=0.7,
-        zorder=4,
-    )
-    ax.annotate(
-        r"vary $v$",
-        xy=(selected.real[1], selected.imag[1]),
-        xytext=(1.55, -0.20),
-        fontsize=5.8,
-        color=colours[1],
-        arrowprops={"arrowstyle": "->", "lw": 0.7, "color": colours[1]},
+    axis.add_patch(mismatch)
+    axis.text(
+        1.055,
+        0.17,
+        "detuning $\\nu$ sets\n" r"gap $E_c-E$",
+        color="#966A10",
+        fontsize=6.4,
+        ha="left",
+        va="center",
     )
 
-    ax.axhline(0.0, color="#7B8490", lw=0.55, zorder=-1)
-    ax.axvline(1.0, color="#7B8490", lw=0.55, ls=(0, (2, 2)), zorder=-1)
-    ax.plot([1.0], [0.0], marker="o", ms=2.5, color="#27313D", zorder=5)
-    ax.text(1.03, 0.07, r"off: $a_c/a_{\rm bg}=1$", fontsize=5.4, color="#27313D")
-
-    ax.set_xlim(-0.12, 2.12)
-    ax.set_ylim(-2.12, 0.20)
-    ax.set_aspect("equal", adjustable="box")
-    ax.set_xlabel(r"$\mathrm{Re}(a_c/a_{\rm bg})$", fontsize=6.2, labelpad=1.5)
-    ax.set_ylabel(r"$\mathrm{Im}(a_c/a_{\rm bg})$", fontsize=6.2, labelpad=1.5)
-    ax.tick_params(axis="both", which="major", labelsize=5.6, length=2.2, width=0.6, pad=1.5)
-    ax.set_xticks([0, 1, 2])
-    ax.set_yticks([-2, -1, 0])
-    for spine in ax.spines.values():
-        spine.set_linewidth(0.6)
-
-    legend = ax.legend(
-        loc="lower left",
-        frameon=True,
-        fontsize=5.5,
-        handlelength=1.6,
-        borderaxespad=0.2,
-        labelspacing=0.25,
-        facecolor="white",
-        framealpha=0.78,
-        edgecolor="none",
+    axis.set_xlim(0.18, 1.25)
+    axis.set_ylim(-0.36, 1.03)
+    axis.set_xticks([])
+    axis.set_yticks([0.0])
+    axis.set_yticklabels(["0"])
+    axis.set_xlabel(r"atomic separation $R$", fontsize=7.2, labelpad=2.0)
+    axis.set_ylabel("energy", fontsize=7.2, labelpad=2.0)
+    axis.set_title(
+        "Open and photon-dressed closed channels",
+        loc="left",
+        color=NAVY,
+        fontsize=8.5,
+        fontweight="bold",
+        pad=3.0,
     )
-    legend.set_title(r"fixed intensity $u=\Gamma/\gamma$", prop={"size": 5.5})
-    ax.text(0.01, 0.98, "(b)", transform=ax.transAxes, fontsize=7.2, fontweight="bold", va="top")
+    _style_axis(axis)
 
 
 def build_figure() -> plt.Figure:
-    """Create the complete publication-sized two-panel figure."""
+    """Create the publication-sized single-panel schematic."""
 
     plt.rcParams.update(
         {
@@ -214,15 +165,9 @@ def build_figure() -> plt.Figure:
             "ps.fonttype": 42,
         }
     )
-    figure, axes = plt.subplots(
-        1,
-        2,
-        figsize=(3.45, 1.82),
-        gridspec_kw={"width_ratios": [1.05, 1.0], "wspace": 0.24},
-    )
-    draw_level_diagram(axes[0])
-    draw_accessible_loci(axes[1])
-    figure.subplots_adjust(left=0.02, right=0.995, bottom=0.18, top=0.98)
+    figure, axis = plt.subplots(figsize=(5.15, 2.35))
+    draw_channel_potentials(axis)
+    figure.subplots_adjust(left=0.085, right=0.985, bottom=0.18, top=0.90)
     return figure
 
 
@@ -234,12 +179,7 @@ def parse_args() -> argparse.Namespace:
         default=DEFAULT_OUTPUT,
         help=f"output PDF or image path (default: {DEFAULT_OUTPUT})",
     )
-    parser.add_argument(
-        "--dpi",
-        type=int,
-        default=300,
-        help="resolution for raster outputs (default: 300)",
-    )
+    parser.add_argument("--dpi", type=int, default=300)
     return parser.parse_args()
 
 
@@ -247,9 +187,8 @@ def main() -> None:
     args = parse_args()
     output = args.output.expanduser().resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
-
     figure = build_figure()
-    figure.savefig(output, dpi=args.dpi, bbox_inches="tight", pad_inches=0.02)
+    figure.savefig(output, dpi=args.dpi, bbox_inches="tight", pad_inches=0.025)
     plt.close(figure)
     print(f"Wrote {output}")
 

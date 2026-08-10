@@ -16,6 +16,7 @@ from ofc.plotting import (
     plot_controls,
     plot_double_sweep_summary,
     plot_single_sweep_summary,
+    plot_standard_summary,
     plot_standard_figures,
     plot_sweep_run_summaries,
     plot_triple_sweep_summary,
@@ -98,7 +99,7 @@ def sample_run(
     }
 
 
-def test_standard_plot_matches_three_figure_structure():
+def test_standard_plot_is_one_unified_summary_of_the_shown_runs():
     runs = [
         sample_run(1, N=4, stable=False),
         sample_run(2, N=4, score_shift=0.2),
@@ -106,66 +107,32 @@ def test_standard_plot_matches_three_figure_structure():
     ]
     figures = plot_standard_figures(runs)
 
-    assert list(figures) == ["convergence", "distribution", "controls"]
-    convergence, convergence_axes = figures["convergence"]
-    distribution, distribution_axis = figures["distribution"]
-    controls, control_axes = figures["controls"]
-    assert convergence._suptitle is None
-    assert all(axis.get_xscale() == "log" for axis in convergence_axes)
-    assert all(axis.get_yscale() == "log" for axis in convergence_axes)
-    assert convergence_axes[-1].xaxis._scale.base == 10
-    assert convergence_axes[-1].yaxis._scale.base == 2
-    assert [axis.get_ylabel() for axis in convergence_axes] == [
-        r"$J_{\mathrm{reg}}$",
-        r"$J_{\mathrm{mol}}$",
-        "Penalty",
-    ]
-    assert hasattr(convergence, "_configuration_box")
-    assert distribution._suptitle is None
-    assert distribution_axis.get_yscale() == "log"
-    assert distribution_axis.yaxis._scale.base == 10
-    assert distribution_axis.lines[0].get_alpha() == pytest.approx(0.22)
-    sensitivity_axis = distribution._seed_sensitivity_axis
-    assert sensitivity_axis.get_yscale() == "log"
-    assert sensitivity_axis.yaxis._scale.base == 10
-    assert [tick.get_text() for tick in sensitivity_axis.get_xticklabels()] == [
-        "1",
-        "2",
-        "3",
-    ]
-    assert sensitivity_axis.get_xlabel() == "Initialization"
-    assert sensitivity_axis.get_ylabel() == r"Seed sensitivity $S_J$"
-    assert convergence._sweep_parameter == "initialization_index"
-    assert distribution._sweep_parameter == "initialization_index"
-    assert controls._sweep_parameter == "initialization_index"
-    assert controls._suptitle is None
-    assert [axis.get_ylabel() for axis in control_axes] == [r"$u/u_{\max}$", r"$\nu/\nu_{\max}$"]
-    assert convergence_axes[0]._schedule_change_steps == (2,)
-    assert len(convergence_axes[0]._schedule_change_lines) == 1
-    assert convergence._score_reference_axis is not None
-    assert convergence_axes[0]._best_score_reference_line.get_linestyle() == "--"
-    data_lines = [
-        line
-        for line in convergence_axes[0].lines
-        if line is not convergence_axes[0]._best_score_reference_line
-        and line not in convergence_axes[0]._schedule_change_lines
-    ]
-    assert len(data_lines) == len(control_axes[0].lines) == 3
-    for convergence_line, control_line in zip(
-        data_lines, control_axes[0].lines
-    ):
-        np.testing.assert_allclose(
-            np.asarray(convergence_line.get_color()),
-            np.asarray(control_line.get_color()),
-        )
-    for axis in control_axes:
-        ticks = axis.get_xticks()
-        assert 0.0 in ticks
-        assert 1.0 in ticks
-        assert np.any((ticks > 0.0) & (ticks < 1.0))
-        assert [
-            tick.get_text() for tick in axis.get_xticklabels() if tick.get_text()
-        ] == ["0.0", "1.0"]
+    assert list(figures) == ["sweep_summary"]
+    figure, axes = figures["sweep_summary"]
+    score_axis, objective_axis, u_axis, v_axis = axes
+    assert figure._suptitle is None
+    assert figure._sweep_parameter is None
+    assert len(figure.axes) == 4
+    assert score_axis.get_xscale() == "log"
+    assert score_axis.xaxis._scale.base == 10
+    assert score_axis.get_ylabel() == r"$J_{\mathrm{reg}}$"
+    assert objective_axis.get_ylabel() == r"$J_{\mathrm{mol}}$"
+    assert objective_axis.yaxis.get_label_position() == "right"
+    np.testing.assert_allclose(score_axis.get_ylim(), objective_axis.get_ylim())
+    assert score_axis._statistic_run_ids == (1, 2, 3)
+    assert objective_axis._plotted_run_ids == (1, 2, 3)
+    np.testing.assert_allclose(
+        score_axis._median_history,
+        np.median([run["history"]["score"] for run in runs], axis=0),
+    )
+    assert score_axis._schedule_change_steps == (2,)
+    assert len(score_axis._schedule_change_lines) == 1
+    assert score_axis._schedule_change_lines[0].get_linestyle() == "--"
+    assert score_axis._best_score_reference_line.get_linestyle() == "--"
+    assert any(r"$S_J=" in text.get_text() for text in objective_axis.texts)
+    assert [u_axis.get_ylabel(), v_axis.get_ylabel()] == [r"$u$", r"$\nu$"]
+    assert len(u_axis.lines) == len(v_axis.lines) == 3
+    assert all(axis.get_xticks().size == 0 for axis in (u_axis, v_axis))
 
 
 def test_step_markers_only_include_actual_adam_learning_rate_updates():
@@ -210,47 +177,25 @@ def test_log_parameter_sweep_uses_best_traces_and_all_initialization_scatter():
         sample_run(6, N=4, u_max=100.0, score_shift=0.8),
     ]
 
-    figures = plot_standard_figures(runs)
-    convergence, convergence_axes = figures["convergence"]
-    distribution, distribution_axis = figures["distribution"]
-    controls, control_axes = figures["controls"]
+    figure, axes = plot_standard_figures(runs)["sweep_summary"]
 
-    assert convergence._sweep_parameter == "u_max"
-    assert convergence._plotted_run_ids == (2, 4, 6)
-    assert controls._plotted_run_ids == (2, 4, 6)
-    assert distribution._scatter_run_count == len(runs)
-    assert distribution_axis.get_xscale() == "linear"
-    sensitivity_axis = distribution._seed_sensitivity_axis
-    assert sensitivity_axis.get_xlabel() == r"$u_{\max}$"
-    assert convergence._suptitle is None
-    assert distribution._suptitle is None
-    assert controls._suptitle is None
-    assert len(distribution.axes) == 2
-    np.testing.assert_allclose(distribution_axis.get_xticks(), [0.0, 1.0, 2.0])
-    assert [tick.get_text() for tick in sensitivity_axis.get_xticklabels()] == [
-        "1",
-        "10",
-        "100",
-    ]
-
-    convergence_lines = convergence_axes[0].lines
-    control_lines = control_axes[0].lines
-    data_lines = [
-        line
-        for line in convergence_lines
-        if line is not convergence_axes[0]._best_score_reference_line
-        and line not in convergence_axes[0]._schedule_change_lines
-    ]
-    assert convergence_axes[0]._schedule_change_steps == (2,)
-    assert len(data_lines) == len(control_lines) == 3
-    assert len({tuple(line.get_color()) for line in data_lines}) == 3
-    for convergence_line, control_line in zip(data_lines, control_lines):
-        np.testing.assert_allclose(
-            np.asarray(convergence_line.get_color()),
-            np.asarray(control_line.get_color()),
-        )
-    assert [line.get_alpha() for line in data_lines] == [1.0, 0.55, 1.0]
-    assert [line.get_alpha() for line in control_lines] == [1.0, 0.55, 1.0]
+    assert figure._sweep_parameter == "u_max"
+    assert len(figure._summary_records) == 3
+    assert len(axes) == 12
+    assert len(figure._summary_sweep_labels) == 3
+    for index, record in enumerate(figure._summary_records):
+        expected_ids = (2 * index + 1, 2 * index + 2)
+        assert record["run_ids"] == expected_ids
+        assert record["score_statistic_run_ids"] == expected_ids
+        assert record["objective"]["run_ids"] == expected_ids
+        score_axis, objective_axis, u_axis, v_axis = axes[4 * index : 4 * index + 4]
+        assert score_axis._statistic_run_ids == expected_ids
+        assert score_axis._schedule_change_steps == (2,)
+        assert len(score_axis._schedule_change_lines) == 1
+        assert objective_axis._plotted_run_ids == expected_ids
+        assert objective_axis.yaxis.get_label_position() == "right"
+        np.testing.assert_allclose(score_axis.get_ylim(), objective_axis.get_ylim())
+        assert len(u_axis.lines) == len(v_axis.lines) == 2
 
 
 def test_scatter_and_line_plotters_offer_independent_optional_log_axes():
@@ -1006,17 +951,18 @@ def test_sweep_best_objective_and_control_are_selected_by_regularized_score():
     figures = plot_standard_figures(
         [lower_score_higher_objective, best_score, other_value]
     )
-    distribution_axis = figures["distribution"][1]
-    controls_figure, control_axes = figures["controls"]
+    figure, axes = figures["sweep_summary"]
+    first_record = figure._summary_records[0]
 
-    assert controls_figure._plotted_run_ids == (2, 3)
+    assert first_record["objective"]["run_ids"] == (1, 2)
+    assert first_record["objective"]["best_run_id"] == 2
     np.testing.assert_allclose(
-        distribution_axis.collections[-1].get_offsets()[:, 1],
-        [best_score["best_objective"], other_value["best_objective"]],
+        first_record["objective"]["values"],
+        [lower_score_higher_objective["best_objective"], best_score["best_objective"]],
     )
     np.testing.assert_allclose(
-        control_axes[0].lines[0].get_ydata(),
-        best_score["controls"]["best"]["u"] / best_score["u_max"],
+        axes[2].lines[1].get_ydata(),
+        best_score["controls"]["best"]["u"],
     )
 
 
@@ -1039,19 +985,27 @@ def test_compact_sweep_summary_keeps_only_score_and_raw_controls_with_stability(
         history_points=4,
     )
 
-    assert len(figure.axes) == 6
+    assert len(figure.axes) == 8
     score_axes = [axis for axis in figure.axes if axis.get_ylabel() == r"$J_{\mathrm{reg}}$"]
     assert len(score_axes) == 2
-    assert not any(
-        axis.get_ylabel() in {r"$J_{\mathrm{mol}}$", "Penalty"}
-        for axis in figure.axes
-    )
+    objective_axes = [
+        axis for axis in figure.axes if axis.get_ylabel() == r"$J_{\mathrm{mol}}$"
+    ]
+    assert len(objective_axes) == 2
     assert all(axis.get_xscale() == "log" for axis in score_axes)
     assert all(axis._schedule_change_steps == (2,) for axis in score_axes)
     assert all(len(axis._schedule_change_lines) == 1 for axis in score_axes)
     assert all(axis.xaxis._scale.cutoff == pytest.approx(1.0) for axis in score_axes)
     assert all(axis.xaxis.get_label_position() == "top" for axis in score_axes)
-    assert all(hasattr(axis, "_score_reference_axis") for axis in score_axes)
+    assert all(not hasattr(axis, "_score_reference_axis") for axis in score_axes)
+    assert all(
+        objective._plotted_run_ids == score._statistic_run_ids
+        for score, objective in zip(score_axes, objective_axes)
+    )
+    assert all(
+        np.allclose(score.get_ylim(), objective.get_ylim())
+        for score, objective in zip(score_axes, objective_axes)
+    )
     first_u_axis = next(axis for axis in figure.axes if axis.get_ylabel() == r"$u$")
     first_v_axis = next(axis for axis in figure.axes if axis.get_ylabel() == r"$\nu$")
     np.testing.assert_allclose(
@@ -1092,6 +1046,32 @@ def test_compact_sweep_summary_keeps_only_score_and_raw_controls_with_stability(
     assert figure._summary_records[0]["controls"]["u"]["stable"] == 1
 
 
+def test_summary_statistics_cannot_include_runs_outside_the_displayed_selection():
+    shown = [
+        sample_run(1, N=4, u_max=10.0, score_shift=0.0),
+        sample_run(2, N=4, u_max=10.0, score_shift=0.2),
+    ]
+    outside = sample_run(99, N=4, u_max=10.0, score_shift=100.0)
+    by_id = {run["run_id"]: run for run in (*shown, outside)}
+
+    figure = plot_single_sweep_summary(
+        shown,
+        _make_sweep_spec(shown, "u_max", allow_single=True),
+        load_history=lambda run_id: by_id[run_id]["history"],
+        load_tolerances=lambda run_id: by_id[run_id]["tolerances"],
+        load_controls=lambda run_id: by_id[run_id]["controls"]["best"],
+    )
+    score_axis, objective_axis, _, _ = figure._summary_axes
+
+    assert score_axis._statistic_run_ids == (1, 2)
+    assert objective_axis._plotted_run_ids == (1, 2)
+    np.testing.assert_allclose(
+        score_axis._median_history,
+        np.median([run["history"]["score"] for run in shown], axis=0),
+    )
+    assert figure._summary_records[0]["objective"]["run_ids"] == (1, 2)
+
+
 def test_double_sweep_summary_colours_best_combination_runs_and_repeats_rectangles():
     runs = []
     run_id = 1
@@ -1122,13 +1102,21 @@ def test_double_sweep_summary_colours_best_combination_runs_and_repeats_rectangl
     assert figure._separate_sweep_parameter == "u_max"
     assert figure._colour_sweep_parameter == "adam_learning_rate"
     assert len(figure._summary_records) == 2
-    assert len(figure._summary_axes) == 6
+    assert len(figure._summary_axes) == 8
     assert all(len(record["run_ids"]) == 2 for record in figure._summary_records)
+    for index, record in enumerate(figure._summary_records):
+        score_axis = figure._summary_axes[4 * index]
+        assert score_axis._statistic_run_ids == record["run_ids"]
+        expected = np.median(
+            [by_id[run_id]["history"]["score"][[0, 1, 2, 4]] for run_id in record["run_ids"]],
+            axis=0,
+        )
+        np.testing.assert_allclose(score_axis._median_history, expected)
     assert figure._summary_colourbar.ax in figure.axes
     assert len(figure._summary_colourbars) == 2
     figure.canvas.draw()
     for index, colourbar in enumerate(figure._summary_colourbars):
-        u_axis = figure._summary_axes[3 * index + 1]
+        u_axis = figure._summary_axes[4 * index + 2]
         assert colourbar.ax.get_position().y1 == pytest.approx(
             u_axis.get_position().y0
         )
@@ -1171,7 +1159,8 @@ def test_triple_sweep_summary_uses_matrix_cells_and_only_best_score_reference():
     assert figure._column_sweep_parameter == "smoothness"
     assert figure._colour_sweep_parameter == "adam_learning_rate"
     assert len(figure._summary_records) == 4
-    score_axes = list(figure._summary_axes[0::3])
+    score_axes = list(figure._summary_axes[0::4])
+    objective_axes = list(figure._summary_axes[1::4])
     assert all(len(axis._score_reference_values) == 1 for axis in score_axes)
     assert all("score_stable" not in record for record in figure._summary_records)
     assert [axis.get_ylabel() for axis in score_axes] == [
@@ -1189,8 +1178,15 @@ def test_triple_sweep_summary_uses_matrix_cells_and_only_best_score_reference():
     figure.canvas.draw()
     assert all(any(label.get_visible() for label in axis.get_xticklabels()) for axis in score_axes)
     assert all(any(label.get_visible() for label in axis.get_yticklabels()) for axis in score_axes)
-    u_axes = list(figure._summary_axes[1::3])
-    v_axes = list(figure._summary_axes[2::3])
+    assert [axis.get_ylabel() for axis in objective_axes] == [
+        "",
+        r"$J_{\mathrm{mol}}$",
+        "",
+        r"$J_{\mathrm{mol}}$",
+    ]
+    assert all(any(label.get_visible() for label in axis.get_yticklabels()) for axis in objective_axes)
+    u_axes = list(figure._summary_axes[2::4])
+    v_axes = list(figure._summary_axes[3::4])
     assert [axis.get_ylabel() for axis in u_axes] == [r"$u$", "", r"$u$", ""]
     assert [axis.get_ylabel() for axis in v_axes] == ["", r"$\nu$", "", r"$\nu$"]
     assert all(any(label.get_visible() for label in axis.get_yticklabels()) for axis in u_axes)
@@ -1210,14 +1206,11 @@ def test_signed_log_background_sweep_still_uses_categorical_distribution_axis():
 
     figures = plot_standard_figures(runs)
 
-    distribution, axis = figures["distribution"]
-    assert axis.get_xscale() == "linear"
-    np.testing.assert_allclose(axis.get_xticks(), np.arange(len(values)))
-    assert [
-        tick.get_text()
-        for tick in distribution._seed_sensitivity_axis.get_xticklabels()
-    ] == ["-1", "-0.1", "-0.01", "0.01", "0.1", "1"]
-    assert distribution._sweep_parameter == "r_bg"
+    figure, axes = figures["sweep_summary"]
+    assert figure._sweep_parameter == "r_bg"
+    assert len(figure._summary_records) == len(values)
+    assert len(axes) == 4 * len(values)
+    assert [record["sweep_value"] for record in figure._summary_records] == list(values)
 
 
 def test_multiple_parameter_sweeps_require_explicit_selection():
@@ -1230,10 +1223,10 @@ def test_multiple_parameter_sweeps_require_explicit_selection():
         plot_standard_figures(runs)
 
     figures = plot_standard_figures(runs, sweep_parameter="u_max")
-    assert figures["distribution"][0]._sweep_parameter == "u_max"
+    assert figures["sweep_summary"][0]._sweep_parameter == "u_max"
 
 
-def test_standard_figures_save_as_three_separate_files(tmp_path):
+def test_standard_figures_save_as_one_unified_summary(tmp_path):
     saved = save_standard_figures(
         [sample_run(1, N=4)],
         tmp_path,
@@ -1241,11 +1234,7 @@ def test_standard_figures_save_as_three_separate_files(tmp_path):
     )
 
     assert {path.name for formats in saved.values() for path in formats.values()} == {
-        "01_convergence.png",
-        "01_convergence.pdf",
-        "02_distribution.png",
-        "02_distribution.pdf",
-        "03_controls.png",
-        "03_controls.pdf",
+        "01_sweep_summary.png",
+        "01_sweep_summary.pdf",
     }
     assert all(path.is_file() for formats in saved.values() for path in formats.values())
