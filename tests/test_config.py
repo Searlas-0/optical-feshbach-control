@@ -266,6 +266,28 @@ def test_runtime_initialization_limit_is_validated_and_serialized():
         RuntimeConfig(max_initialisations_per_batch=True)
 
 
+def test_runtime_fourier_intensity_center_accepts_fixed_or_auto_modes():
+    automatic = RuntimeConfig(
+        fourier_intensity_fraction="AUTO",
+        fourier_intensity_auto_database=" results/auto_priors.sqlite3 ",
+    )
+    assert automatic.fourier_intensity_fraction == "auto"
+    assert (
+        automatic.fourier_intensity_auto_database
+        == "results/auto_priors.sqlite3"
+    )
+    assert RuntimeConfig(fourier_intensity_fraction=0.25).fourier_intensity_fraction == 0.25
+
+    for value in (True, 0.0, 1.0, "adaptive"):
+        with pytest.raises(ValueError, match="fraction in"):
+            RuntimeConfig(fourier_intensity_fraction=value)
+    with pytest.raises(ValueError, match="requires"):
+        RuntimeConfig(
+            fourier_intensity_fraction=0.3,
+            fourier_intensity_auto_database="results/auto_priors.sqlite3",
+        )
+
+
 def test_runtime_elapsed_limits_and_equal_batch_distribution_are_validated():
     runtime = RuntimeConfig(
         concurrent_workers=1,

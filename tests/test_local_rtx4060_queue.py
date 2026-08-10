@@ -1,9 +1,23 @@
 from pathlib import Path
 import sqlite3
+import zipfile
 
 from ofc.config import load_config
 from ofc.storage import ResultStore, parameter_database_path
 from scripts.local import run_local_queue
+
+
+def test_prior_bundle_is_extracted_by_the_one_command_worker(tmp_path, monkeypatch):
+    database = tmp_path / "auto_fourier_intensity_priors.sqlite3"
+    transfer = tmp_path / "auto_fourier_intensity_priors-transfer.zip"
+    with zipfile.ZipFile(transfer, "w") as archive:
+        archive.writestr(database.name, b"portable-priors")
+
+    monkeypatch.setattr(run_local_queue, "AUTO_PRIOR_DATABASE", database)
+    monkeypatch.setattr(run_local_queue, "AUTO_PRIOR_TRANSFER", transfer)
+    run_local_queue._ensure_auto_prior_database()
+
+    assert database.read_bytes() == b"portable-priors"
 
 
 def test_committed_local_manifest_is_self_contained_and_uses_transfer_database():
@@ -26,6 +40,13 @@ def test_committed_local_manifest_is_self_contained_and_uses_transfer_database()
     assert all(
         document.query is None or document.query.database is None
         for document in documents
+    )
+    scouts = [document for document in documents if "scout500" in document.name]
+    assert all(document.runtime.fourier_intensity_fraction == "auto" for document in scouts)
+    assert all(
+        document.runtime.fourier_intensity_auto_database
+        == "results/auto_fourier_intensity_priors.sqlite3"
+        for document in scouts
     )
 
 
@@ -71,4 +92,3 @@ def test_incomplete_retry_purge_removes_both_database_halves(tmp_path, monkeypat
         assert connection.execute("SELECT COUNT(*) FROM run_parameters").fetchone()[0] == 0
         assert connection.execute("SELECT COUNT(*) FROM execution_batches").fetchone()[0] == 0
         assert connection.execute("SELECT COUNT(*) FROM config_documents").fetchone()[0] == 0
-

@@ -24,6 +24,40 @@ MANIFEST = ROOT / "scripts" / "local" / "rtx4060.manifest"
 DATABASE = ROOT / "results" / "local_rtx4060_underexplored_v1.sqlite3"
 STATE = ROOT / "logs" / "local_rtx4060_state.json"
 TRANSFER = ROOT / "results" / "local_rtx4060_underexplored_v1-transfer.zip"
+AUTO_PRIOR_DATABASE = ROOT / "results" / "auto_fourier_intensity_priors.sqlite3"
+AUTO_PRIOR_TRANSFER = (
+    ROOT / "results" / "auto_fourier_intensity_priors-transfer.zip"
+)
+
+
+def _ensure_auto_prior_database() -> None:
+    if AUTO_PRIOR_DATABASE.is_file():
+        return
+    if not AUTO_PRIOR_TRANSFER.is_file():
+        raise FileNotFoundError(
+            "The auto-center prior bundle is required. Download "
+            f"{AUTO_PRIOR_TRANSFER.name} from the server into results/, then run "
+            "this same script again."
+        )
+    with zipfile.ZipFile(AUTO_PRIOR_TRANSFER) as archive:
+        matching = [
+            info
+            for info in archive.infolist()
+            if Path(info.filename).name == AUTO_PRIOR_DATABASE.name
+            and not info.is_dir()
+        ]
+        if len(matching) != 1:
+            raise RuntimeError(
+                f"{AUTO_PRIOR_TRANSFER} does not contain exactly one "
+                f"{AUTO_PRIOR_DATABASE.name}."
+            )
+        AUTO_PRIOR_DATABASE.parent.mkdir(parents=True, exist_ok=True)
+        temporary = AUTO_PRIOR_DATABASE.with_suffix(".sqlite3.tmp")
+        with archive.open(matching[0]) as source, temporary.open("wb") as destination:
+            while block := source.read(1024 * 1024):
+                destination.write(block)
+        temporary.replace(AUTO_PRIOR_DATABASE)
+    print(f"EXTRACTED AUTO-CENTER PRIORS | {AUTO_PRIOR_DATABASE}", flush=True)
 
 
 def _manifest_paths() -> tuple[Path, ...]:
@@ -178,6 +212,7 @@ def _package(state: dict, configs: tuple[Path, ...]) -> None:
 
 
 def main() -> int:
+    _ensure_auto_prior_database()
     configs = _manifest_paths()
     documents = tuple(load_config(path) for path in configs)
     expected_database = str(DATABASE.relative_to(ROOT))
@@ -190,6 +225,18 @@ def main() -> int:
         raise RuntimeError(
             "Local configs do not use the dedicated transfer database: "
             + ", ".join(wrong_database)
+        )
+    wrong_prior_database = [
+        document.name
+        for document in documents
+        if document.runtime.fourier_intensity_fraction == "auto"
+        and document.runtime.fourier_intensity_auto_database
+        != str(AUTO_PRIOR_DATABASE.relative_to(ROOT))
+    ]
+    if wrong_prior_database:
+        raise RuntimeError(
+            "Local auto-center configs do not use the portable prior database: "
+            + ", ".join(wrong_prior_database)
         )
 
     fingerprint = _fingerprint(configs)
@@ -252,4 +299,3 @@ def main() -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

@@ -97,9 +97,11 @@ bash scripts/local/run_rtx4060.sh
 
 The launcher verifies `origin/main`, installs an isolated CUDA-enabled JAX
 environment, validates GPU discovery, and resumes the committed laptop
-manifest. It needs no downloaded input database because its assigned lanes
-start from fresh Fourier seeds. See [`scripts/local/README.md`](scripts/local/README.md)
-for the assigned caps and the result bundle returned to the server.
+manifest. First place the server-generated
+`results/auto_fourier_intensity_priors-transfer.zip` in `results/`; the same
+launcher extracts that compact cross-cap input automatically. See
+[`scripts/local/README.md`](scripts/local/README.md) for the assigned caps and
+the result bundle returned to the server.
 
 ## Configuration and sweeps
 
@@ -454,9 +456,27 @@ distinguishing multiple configs submitted under the same queue ID. Its stored
 UTC start time provides a stable newest-to-oldest ordering.
 
 All initialization details are stored in `initialization.py` and copied into
-each YAML config: ten default starts, five Fourier modes, a `1/m²` envelope, raw-space RMS
-0.3, `u` centered at 30% of its cap, and `v` centered at zero. The continuous
-coefficients make corresponding curves grid-independent across `N`.
+each YAML config: ten default starts, five Fourier modes, a `1/m²` envelope,
+raw-space RMS 0.3, `u` centered at 30% of its cap, and `v` centered at zero.
+The continuous coefficients make corresponding curves grid-independent across
+`N`.
+
+For data-backed exploration, set:
+
+```yaml
+runtime:
+  fourier_intensity_fraction: auto
+  fourier_intensity_auto_database: results/auto_fourier_intensity_priors.sqlite3
+```
+
+The auto center compares bounded controls across caps using their dimensionless
+mean intensity fractions. It averages a 0.3 prior with up to ten best complete
+solutions matching `t_interval` and `r_bg`, plus up to fifty best exact-cap
+solutions, de-duplicating overlaps. The result is multiplied by the target
+`u_max` and converted to the raw sigmoid offset. The current output database is
+also searched, so exact-cap results produced earlier in a queue can take over
+from cross-cap guidance. Every Fourier run stores the resolved center, source
+count, and source keys for reproducibility.
 
 ## Physics and optimization
 

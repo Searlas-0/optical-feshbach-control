@@ -1,4 +1,5 @@
 from run_config.make_partitioned_gpu_funnels import (
+    AUTO_PRIOR_DATABASE,
     FINAL_STRICT_HOURS,
     LOCAL_DATABASE,
     LOCAL_UNDEREXPLORED_CAPS,
@@ -57,6 +58,8 @@ def test_every_broad_seed_reaches_ten_thousand_steps_before_reduction():
         documents[:lane_count], documents[lane_count : 2 * lane_count]
     ):
         assert scout.runtime.initialisations == 500
+        assert scout.runtime.fourier_intensity_fraction == "auto"
+        assert scout.runtime.fourier_intensity_auto_database == AUTO_PRIOR_DATABASE
         assert scout.scalar_cases()[0].schedule == ((2_000, 1.0),)
         assert broad.scalar_cases()[0].schedule == ((8_000, 0.5),)
         assert broad.query.where["config_id"] == scout.config_id
@@ -92,8 +95,9 @@ def test_track_a_covers_both_endpoints_at_every_grid_before_final_strict_pass():
     for N in RESOLUTIONS:
         for cap in STRICT_ENDPOINTS:
             for endpoint in ("low", "high"):
-                preliminary = f"N{N}_u{cap}_{endpoint}_strictgrid_v1_strict3_gpu"
-                final = f"N{N}_u{cap}_{endpoint}_strictgrid_v1_final_strict1_gpu"
+                prefix = "strictgrid_v2_autocenter"
+                preliminary = f"N{N}_u{cap}_{endpoint}_{prefix}_strict3_gpu"
+                final = f"N{N}_u{cap}_{endpoint}_{prefix}_final_strict1_gpu"
                 assert preliminary in names
                 assert final in names
                 final_document = next(
@@ -114,6 +118,8 @@ def test_higher_grid_promotions_keep_three_predecessors_and_add_twenty_starts():
     assert len(promoted) == (len(RESOLUTIONS) - 1) * len(STRICT_ENDPOINTS) * 2
     for document in promoted:
         assert document.runtime.initialisations == 20
+        assert document.runtime.fourier_intensity_fraction == "auto"
+        assert document.runtime.fourier_intensity_auto_database == AUTO_PRIOR_DATABASE
         assert document.query.limit == 3
         assert document.runtime.max_elapsed_seconds == TWO_HOURS
         assert document.scalar_cases()[0].optimizer == "lbfgs"
@@ -122,7 +128,7 @@ def test_higher_grid_promotions_keep_three_predecessors_and_add_twenty_starts():
 def test_u1280_low_reuses_the_completed_thousand_seed_source():
     first = track_a_documents()[0]
 
-    assert first.name == "N100_u1280_low_strictgrid_v1_strict3_gpu"
+    assert first.name == "N100_u1280_low_strictgrid_v2_autocenter_strict3_gpu"
     assert first.query.database == "results/bar_endpoint_seed1000_loose_u320.sqlite3"
     assert first.query.limit == 3
     assert first.query.where["config_name"].endswith("seed1000_top10_loose_gpu")
@@ -146,4 +152,10 @@ def test_server_and_laptop_partition_every_underexplored_cap_once():
     assert all(
         document.runtime.max_initialisations_per_batch <= 50
         for document in local
+    )
+    scouts = [document for document in local if "scout500" in document.name]
+    assert all(document.runtime.fourier_intensity_fraction == "auto" for document in scouts)
+    assert all(
+        document.runtime.fourier_intensity_auto_database == AUTO_PRIOR_DATABASE
+        for document in scouts
     )

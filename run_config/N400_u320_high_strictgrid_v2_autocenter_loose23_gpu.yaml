@@ -1,0 +1,97 @@
+schema_version: 3
+config_id: 148049642473577186
+name: N400_u320_high_strictgrid_v2_autocenter_loose23_gpu
+description: Promote three independent N=300 challengers to N=400, add 20 fresh Fourier
+  starts, and run loose L-BFGS-B for two hours.
+created_utc: '2026-08-10T03:29:38.378848+00:00'
+parameters:
+  N: 400
+  t_interval: 4.0
+  r_bg: -0.008716
+  u_isbound: true
+  v_isbound: true
+  u_max: 320.0
+  v_max: 1000.0
+  slew_limit: 0.05
+  optimizer: lbfgs
+  schedule:
+  - - 50
+    - 1.0
+  adam_learning_rate: 0.05
+  adam_beta1: 0.95
+  adam_beta2: 0.99
+  adam_eps: 1.0e-08
+  lbfgs_history_size: 100
+  lbfgs_max_linesearch_steps: 100
+  lbfgs_tolerance: 1.0e-12
+  peak_initial_step_size: 0.01
+  peak_min_step_size: 1.0e-12
+  peak_max_step_size: 0.1
+  peak_backtracking_factor: 0.5
+  peak_step_growth: 1.5
+  peak_armijo: 0.0001
+  peak_max_linesearch_steps: 24
+  smoothness: 3.9528470752104736e-06
+  u_smooth: null
+  v_smooth: null
+  sharpness: 3.952847075210474e-07
+  u_sharp: null
+  v_sharp: null
+  block_size: 10
+  J_tol: 1.0e-05
+  u_tol: 0.0001
+  v_tol: 0.0001
+  projected_gradient_tol: 0.0001
+  projected_gradient_alpha: 1.0
+  grid_refinement_tol: 0.01
+  grid_refinement_y_floor: 1.0e-12
+runtime:
+  initialisations: 20
+  fourier_num_modes: 6
+  fourier_rms_amplitude: 0.8
+  fourier_intensity_fraction: auto
+  fourier_intensity_auto_database: results/auto_fourier_intensity_priors.sqlite3
+  use_jit: true
+  use_x64: true
+  device: gpu
+  concurrent_workers: 1
+  max_cases_per_batch: null
+  max_initialisations_per_batch: 23
+  max_steps_per_chunk: 50
+  max_batch_elapsed_seconds: 7200.0
+  max_elapsed_seconds: 7200.0
+  distribute_max_elapsed_across_batches: false
+  repeat_schedule_until_stable: true
+  auto_halt: true
+  database: results/bar_strict_three_cap_multigrid_v1.sqlite3
+query:
+  where:
+    status: complete
+    config_id: 6766733227426414795
+    config_name: N300_u320_high_strictgrid_v2_autocenter_strict3_gpu
+    N: 300
+    u_max: 320.0
+    smoothness: 3.9528470752104736e-06
+    sharpness: 3.952847075210474e-07
+    termination_reason:
+    - stability
+    - time_limit
+  database: null
+  limit: 3
+  order_by: best_objective
+  descending: true
+  control_kind: best
+  resume_optimizer: false
+  perturbed: false
+  perturbation_levels:
+  - 0.0005
+  - 0.001
+  - 0.0025
+  - 0.005
+  - 0.01
+  match_parameters: []
+  discover_parameters: []
+  discover_group_parameters: []
+  fallback_where: null
+batch_ids:
+  '{"N":400,"schedule":[[50,1.0]],"t_interval":4.0}': 5570734343801738580

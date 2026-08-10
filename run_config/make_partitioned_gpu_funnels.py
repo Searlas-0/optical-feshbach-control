@@ -25,6 +25,7 @@ from ofc.config import ConfigDocument, load_config, make_document, write_config
 TRACK_A_DATABASE = "results/bar_strict_three_cap_multigrid_v1.sqlite3"
 TRACK_B_DATABASE = "results/bar_underexplored_progressive_v2.sqlite3"
 LOCAL_DATABASE = "results/local_rtx4060_underexplored_v1.sqlite3"
+AUTO_PRIOR_DATABASE = "results/auto_fourier_intensity_priors.sqlite3"
 TRACK_A_MANIFEST = ROOT / "run_config" / "partitioned_gpu_track_a.manifest"
 TRACK_B_MANIFEST = ROOT / "run_config" / "partitioned_gpu_track_b.manifest"
 LOCAL_MANIFEST = ROOT / "scripts" / "local" / "rtx4060.manifest"
@@ -210,13 +211,15 @@ def _runtime(
     distribute_deadline: bool = False,
     repeat_until_stable: bool = False,
     auto_halt: bool = False,
-    intensity_fraction: float = 0.5,
+    intensity_fraction: float | str = 0.5,
+    auto_prior_database: str | None = None,
 ) -> dict:
     return {
         "initialisations": initialisations,
         "fourier_num_modes": 6,
         "fourier_rms_amplitude": 0.8,
         "fourier_intensity_fraction": intensity_fraction,
+        "fourier_intensity_auto_database": auto_prior_database,
         "use_jit": True,
         "use_x64": True,
         "device": "gpu",
@@ -320,7 +323,14 @@ def _document(
             distribute_deadline=distribute_deadline,
             repeat_until_stable=repeat_until_stable,
             auto_halt=auto_halt,
-            intensity_fraction=settings["fourier_intensity_fraction"],
+            intensity_fraction=(
+                "auto"
+                if initialisations > 0
+                else settings["fourier_intensity_fraction"]
+            ),
+            auto_prior_database=(
+                AUTO_PRIOR_DATABASE if initialisations > 0 else None
+            ),
         ),
         query=query,
     )
@@ -460,7 +470,7 @@ def _strict_from_existing_u1280() -> ConfigDocument:
     source = load_config(source_path)
     settings = STRICT_ENDPOINTS[1280]["low"]
     return _document(
-        name="N100_u1280_low_strictgrid_v1_strict3_gpu",
+        name="N100_u1280_low_strictgrid_v2_autocenter_strict3_gpu",
         description=(
             "Strictly refine the top three of the existing u_max=1280 low-"
             "endpoint top-ten handoff; its 1,000 seeds already received 20,000 "
@@ -492,8 +502,9 @@ def _grid_promotion(
     settings: Mapping[str, float],
     N: int,
     source: ConfigDocument,
+    prefix: str,
 ) -> tuple[ConfigDocument, ConfigDocument]:
-    base = f"N{N}_u{cap}_{endpoint}_strictgrid_v1"
+    base = f"N{N}_u{cap}_{endpoint}_{prefix}"
     loose = _document(
         name=f"{base}_loose23_gpu",
         description=(
@@ -549,9 +560,10 @@ def _final_strict(
     settings: Mapping[str, float],
     N: int,
     source: ConfigDocument,
+    prefix: str,
 ) -> ConfigDocument:
     return _document(
-        name=f"N{N}_u{cap}_{endpoint}_strictgrid_v1_final_strict1_gpu",
+        name=f"N{N}_u{cap}_{endpoint}_{prefix}_final_strict1_gpu",
         description=(
             f"Final N={N} u_max={cap} {endpoint}-endpoint strict convergence "
             "of the best independently challenged solution, with a 12-hour guard."
@@ -575,13 +587,14 @@ def _final_strict(
 
 
 def track_a_documents() -> tuple[ConfigDocument, ...]:
+    prefix = "strictgrid_v2_autocenter"
     lanes: dict[tuple[int, str], tuple[ConfigDocument, ...]] = {}
     for cap, endpoints in STRICT_ENDPOINTS.items():
         for endpoint, settings in endpoints.items():
             if (cap, endpoint) == (1280, "low"):
                 continue
             lanes[(cap, endpoint)] = _n100_funnel(
-                prefix="strictgrid_v1",
+                prefix=prefix,
                 cap=cap,
                 endpoint=endpoint,
                 settings=settings,
@@ -617,6 +630,7 @@ def track_a_documents() -> tuple[ConfigDocument, ...]:
                 settings=STRICT_ENDPOINTS[cap][endpoint],
                 N=N,
                 source=preliminary_by_grid[(cap, endpoint, N - 100)],
+                prefix=prefix,
             )
             promoted.append((cap, endpoint, loose, strict))
         ordered.extend(item[2] for item in promoted)
@@ -636,6 +650,7 @@ def track_a_documents() -> tuple[ConfigDocument, ...]:
                     settings=STRICT_ENDPOINTS[cap][endpoint],
                     N=N,
                     source=preliminary_by_grid[(cap, endpoint, N)],
+                    prefix=prefix,
                 )
             )
     return tuple(ordered)
@@ -697,7 +712,7 @@ def track_b_documents() -> tuple[ConfigDocument, ...]:
 
     return _progressive_documents(
         caps=SERVER_UNDEREXPLORED_CAPS,
-        prefix="progressive_v2",
+        prefix="progressive_v3_autocenter",
         database=TRACK_B_DATABASE,
     )
 
@@ -707,7 +722,7 @@ def local_track_documents() -> tuple[ConfigDocument, ...]:
 
     return _progressive_documents(
         caps=LOCAL_UNDEREXPLORED_CAPS,
-        prefix="local4060_v1",
+        prefix="local4060_v2_autocenter",
         database=LOCAL_DATABASE,
     )
 
@@ -749,24 +764,25 @@ def _paths_for_caps(paths: tuple[Path, ...], caps: tuple[int, ...]) -> tuple[Pat
     return tuple(selected)
 
 
+def _current_manifest_paths(manifest: Path, version_token: str):
+    if not manifest.is_file():
+        return None
+    paths = _existing_manifest_paths(manifest)
+    if paths and all(version_token in path.stem for path in paths):
+        return paths
+    return None
+
+
 def main() -> tuple[tuple[Path, ...], tuple[Path, ...], tuple[Path, ...]]:
-    track_a = (
-        _existing_manifest_paths(TRACK_A_MANIFEST)
-        if TRACK_A_MANIFEST.is_file()
-        else _write_documents(track_a_documents(), TRACK_A_MANIFEST)
-    )
-    if TRACK_B_MANIFEST.is_file():
-        track_b = _paths_for_caps(
-            _existing_manifest_paths(TRACK_B_MANIFEST), SERVER_UNDEREXPLORED_CAPS
-        )
-        _write_manifest(track_b, TRACK_B_MANIFEST)
-    else:
+    track_a = _current_manifest_paths(TRACK_A_MANIFEST, "strictgrid_v2_autocenter")
+    if track_a is None:
+        track_a = _write_documents(track_a_documents(), TRACK_A_MANIFEST)
+    track_b = _current_manifest_paths(TRACK_B_MANIFEST, "progressive_v3_autocenter")
+    if track_b is None:
         track_b = _write_documents(track_b_documents(), TRACK_B_MANIFEST)
-    local_track = (
-        _existing_manifest_paths(LOCAL_MANIFEST)
-        if LOCAL_MANIFEST.is_file()
-        else _write_documents(local_track_documents(), LOCAL_MANIFEST)
-    )
+    local_track = _current_manifest_paths(LOCAL_MANIFEST, "local4060_v2_autocenter")
+    if local_track is None:
+        local_track = _write_documents(local_track_documents(), LOCAL_MANIFEST)
     print(f"Track A: {len(track_a)} configs -> {TRACK_A_MANIFEST}")
     print(f"Track B: {len(track_b)} configs -> {TRACK_B_MANIFEST}")
     print(f"RTX 4060: {len(local_track)} configs -> {LOCAL_MANIFEST}")

@@ -253,7 +253,8 @@ class RuntimeConfig:
     initialisations: int = 24
     fourier_num_modes: int = 5
     fourier_rms_amplitude: float = 0.3
-    fourier_intensity_fraction: float = 0.3
+    fourier_intensity_fraction: float | str = 0.3
+    fourier_intensity_auto_database: str | None = None
     use_jit: bool = True
     use_x64: bool = True
     device: str = "auto"
@@ -334,13 +335,48 @@ class RuntimeConfig:
             )
         if not 3 <= self.fourier_num_modes <= 6:
             raise ValueError("fourier_num_modes must be between 3 and 6.")
-        for name in ("fourier_rms_amplitude", "fourier_intensity_fraction"):
+        value = self.fourier_intensity_fraction
+        if isinstance(value, str):
+            if value.strip().lower() != "auto":
+                raise ValueError(
+                    "fourier_intensity_fraction must be a fraction in (0, 1) "
+                    "or 'auto'."
+                )
+            object.__setattr__(self, "fourier_intensity_fraction", "auto")
+        else:
+            if isinstance(value, bool) or not isinstance(value, Real):
+                raise ValueError(
+                    "fourier_intensity_fraction must be a fraction in (0, 1) "
+                    "or 'auto'."
+                )
+            value = float(value)
+            if not math.isfinite(value) or not 0.0 < value < 1.0:
+                raise ValueError(
+                    "fourier_intensity_fraction must be a fraction in (0, 1) "
+                    "or 'auto'."
+                )
+            object.__setattr__(self, "fourier_intensity_fraction", value)
+
+        auto_database = self.fourier_intensity_auto_database
+        if auto_database is not None:
+            if not isinstance(auto_database, str) or not auto_database.strip():
+                raise ValueError(
+                    "fourier_intensity_auto_database must be a non-empty path or null."
+                )
+            object.__setattr__(
+                self, "fourier_intensity_auto_database", auto_database.strip()
+            )
+        if auto_database is not None and self.fourier_intensity_fraction != "auto":
+            raise ValueError(
+                "fourier_intensity_auto_database requires "
+                "fourier_intensity_fraction: auto."
+            )
+
+        for name in ("fourier_rms_amplitude",):
             value = float(getattr(self, name))
             if not math.isfinite(value) or value <= 0.0:
                 raise ValueError(f"{name} must be finite and positive.")
             object.__setattr__(self, name, value)
-        if not 0.0 < self.fourier_intensity_fraction < 1.0:
-            raise ValueError("fourier_intensity_fraction must be in (0, 1).")
         if not isinstance(self.auto_halt, bool):
             raise ValueError("auto_halt must be a boolean.")
         device = str(self.device).lower()

@@ -25,6 +25,7 @@ import jax.numpy as jnp
 import numpy as np
 
 from .analysis import best_control_derivatives
+from .auto_initialization import AutoIntensityCenter, resolve_auto_intensity_center
 from .config import (
     BatchSpec,
     ConfigDocument,
@@ -90,6 +91,41 @@ def _validate_slurm_cpu_allocation(documents: Iterable[ConfigDocument]) -> None:
 def _database_path(document: ConfigDocument) -> Path:
     path = Path(document.runtime.database).expanduser()
     return path.resolve() if path.is_absolute() else (PROJECT_ROOT / path).resolve()
+
+
+def _project_path(path: str | Path) -> Path:
+    path = Path(path).expanduser()
+    return path.resolve() if path.is_absolute() else (PROJECT_ROOT / path).resolve()
+
+
+def _fourier_intensity_centers(document, cases, output_database):
+    """Snapshot one resolved center per case before initialization sharding."""
+
+    configured = document.runtime.fourier_intensity_fraction
+    if configured != "auto":
+        return {
+            case: AutoIntensityCenter(
+                bounded_center=float(configured) * case.u_max,
+                fraction=float(configured),
+                source_count=0,
+                source_keys=(),
+                global_source_count=0,
+                exact_cap_source_count=0,
+            )
+            for case in cases
+        }
+    prior_path = document.runtime.fourier_intensity_auto_database
+    prior_database = None if prior_path is None else _project_path(prior_path)
+    return {
+        case: resolve_auto_intensity_center(
+            output_database=output_database,
+            prior_database=prior_database,
+            t_interval=case.t_interval,
+            r_bg=case.r_bg,
+            u_max=case.u_max,
+        )
+        for case in cases
+    }
 
 
 def _device(name: str):
@@ -439,9 +475,11 @@ def _batch_query_starts(batch, query_starts):
     return tuple(seeded for _ in batch.cases)
 
 
-def _initial_raw(batch, base_raw, case_query_starts, dtype):
+def _initial_raw(batch, case_base_raw, case_query_starts, dtype):
     blocks = {"u": [], "v": []}
-    for case, query_starts in zip(batch.cases, case_query_starts):
+    for case, base_raw, query_starts in zip(
+        batch.cases, case_base_raw, case_query_starts
+    ):
         queried = []
         for start in query_starts:
             if start["optimizer_state"] is not None:
@@ -584,6 +622,7 @@ def _run_batch(
     store: ResultStore,
     config_document_id: int,
     query_starts,
+    intensity_centers,
     device,
     initialization_range=None,
     initialization_batch_index: int = 0,
@@ -655,22 +694,42 @@ def _run_batch(
         "description": document.description,
         "created_utc": document.created_utc,
     }
+    case_base_raw = []
+    case_fourier_parameters = []
     with jax.default_device(device):
-        all_base_raw, all_fourier_parameters = random_fourier_controls(
-            batch.seed,
-            total_random_initialisations,
-            batch.N,
-            num_modes=runtime.fourier_num_modes,
-            rms_amplitude=runtime.fourier_rms_amplitude,
-            intensity_fraction=runtime.fourier_intensity_fraction,
-            dtype=dtype,
-            return_parameters=True,
-        )
-        base_raw = {
-            name: values[random_start:random_end]
-            for name, values in all_base_raw.items()
-        }
-        fourier_parameters = all_fourier_parameters[random_start:random_end]
+        for case in batch.cases:
+            center = intensity_centers[case]
+            all_base_raw, all_parameters = random_fourier_controls(
+                batch.seed,
+                total_random_initialisations,
+                batch.N,
+                num_modes=runtime.fourier_num_modes,
+                rms_amplitude=runtime.fourier_rms_amplitude,
+                intensity_fraction=center.fraction,
+                dtype=dtype,
+                return_parameters=True,
+            )
+            case_base_raw.append(
+                {
+                    name: values[random_start:random_end]
+                    for name, values in all_base_raw.items()
+                }
+            )
+            center_metadata = (
+                center.metadata()
+                if runtime.fourier_intensity_fraction == "auto"
+                else {
+                    "fourier_u_center_mode": "fixed",
+                    "fourier_u_center": center.bounded_center,
+                    "fourier_u_center_fraction": center.fraction,
+                }
+            )
+            case_fourier_parameters.append(
+                tuple(
+                    {**parameters, **center_metadata}
+                    for parameters in all_parameters[random_start:random_end]
+                )
+            )
     execution_id, run_ids = store.prepare_batch(
         batch_record,
         [
@@ -710,7 +769,9 @@ def _run_batch(
                     for start in starts
                 ]
             )
-            for starts in case_query_starts
+            for fourier_parameters, starts in zip(
+                case_fourier_parameters, case_query_starts
+            )
         ],
     )
     try:
@@ -727,7 +788,7 @@ def _run_batch(
                     case.effective_v_sharp != 0.0 for case in batch.cases
                 ),
             )
-            raw = _initial_raw(batch, base_raw, case_query_starts, dtype)
+            raw = _initial_raw(batch, case_base_raw, case_query_starts, dtype)
             parameters = _member_parameters(batch, initialisations, dtype)
             if first_case.optimizer == "adam":
                 optimizer = BatchedAdamOptimizer(
@@ -1213,7 +1274,8 @@ def run_config(
     queue_id = random_id() if queue_id is None else int(queue_id)
     jax.config.update("jax_enable_x64", document.runtime.use_x64)
     device = _device(document.runtime.device)
-    store = ResultStore(_database_path(document))
+    output_database = _database_path(document)
+    store = ResultStore(output_database)
     config_document_id = store.register_config(
         {
             "config_id": document.config_id,
@@ -1234,6 +1296,9 @@ def run_config(
         document,
         store,
         cases=discovered_cases,
+    )
+    intensity_centers = _fourier_intensity_centers(
+        document, discovered_cases, output_database
     )
     batches = _selected_batches(
         document,
@@ -1292,6 +1357,7 @@ def run_config(
                 store=store,
                 config_document_id=config_document_id,
                 query_starts=query_starts,
+                intensity_centers=intensity_centers,
                 device=device,
                 initialization_range=initialization_range,
                 initialization_batch_index=initialization_batch_index,
@@ -1311,6 +1377,7 @@ def run_config(
                 store=store,
                 config_document_id=config_document_id,
                 query_starts=query_starts,
+                intensity_centers=intensity_centers,
                 device=device,
                 initialization_range=initialization_range,
                 initialization_batch_index=initialization_batch_index,
