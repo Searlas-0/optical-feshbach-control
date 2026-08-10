@@ -169,6 +169,22 @@ def mark_interrupted_runs_failed(
     return sum(map(len, grouped.values()))
 
 
+def _run_command(
+    *,
+    queue_id: int,
+    config: Path,
+    project_root: Path,
+    python_executable: Path,
+) -> list[str]:
+    return [
+        str(python_executable),
+        str(project_root / "run.py"),
+        "--queue-id",
+        str(queue_id),
+        str(config),
+    ]
+
+
 def run_queue(
     runs: list[tuple[int, Path]],
     *,
@@ -186,13 +202,12 @@ def run_queue(
             f"config={config.name} | utc={datetime.now(timezone.utc).isoformat()}",
             flush=True,
         )
-        command = [
-            str(python_executable),
-            str(project_root / "run.py"),
-            "--queue-id",
-            str(queue_id),
-            str(config),
-        ]
+        command = _run_command(
+            queue_id=queue_id,
+            config=config,
+            project_root=project_root,
+            python_executable=python_executable,
+        )
         result = subprocess.run(command, cwd=project_root, check=False)
         if result.returncode:
             failures += 1
@@ -224,6 +239,110 @@ def run_queue(
     return 1 if failures else 0
 
 
+def _terminate_subprocess(process: subprocess.Popen, *, grace_seconds=30.0) -> int:
+    """Stop one exact child, allowing Python/SQLite a short graceful exit first."""
+
+    process.terminate()
+    try:
+        return int(process.wait(timeout=grace_seconds))
+    except subprocess.TimeoutExpired:
+        process.kill()
+        return int(process.wait())
+
+
+def run_timed_queue(
+    runs: list[tuple[int, Path]],
+    *,
+    project_root: Path,
+    python_executable: Path,
+    database: Path,
+    max_elapsed_seconds: float,
+    repeat_until_deadline: bool = False,
+) -> int:
+    """Run configs sequentially and stop the active child at one wall deadline."""
+
+    if not runs:
+        raise ValueError("At least one queued config is required.")
+    if max_elapsed_seconds <= 0.0:
+        raise ValueError("max_elapsed_seconds must be positive.")
+    deadline = time.monotonic() + float(max_elapsed_seconds)
+    failures = 0
+    cycle = 0
+    while True:
+        cycle += 1
+        total = len(runs)
+        for index, (queue_id, config) in enumerate(runs, start=1):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0.0:
+                print(
+                    f"TIMED QUEUE FINISHED | cycles={cycle - 1} | failures={failures} | "
+                    f"utc={datetime.now(timezone.utc).isoformat()}",
+                    flush=True,
+                )
+                return 1 if failures else 0
+            print(
+                f"CYCLE {cycle} QUEUE {index}/{total} START | queue_id={queue_id} | "
+                f"config={config.name} | remaining={remaining / 3600:.2f} h | "
+                f"utc={datetime.now(timezone.utc).isoformat()}",
+                flush=True,
+            )
+            command = _run_command(
+                queue_id=queue_id,
+                config=config,
+                project_root=project_root,
+                python_executable=python_executable,
+            )
+            process = subprocess.Popen(command, cwd=project_root)
+            deadline_reached = False
+            try:
+                return_code = int(process.wait(timeout=remaining))
+            except subprocess.TimeoutExpired:
+                deadline_reached = True
+                return_code = _terminate_subprocess(process)
+            if return_code:
+                if not deadline_reached:
+                    failures += 1
+                message = (
+                    "Timed queue wall deadline reached; committed partial data "
+                    "was preserved."
+                    if deadline_reached
+                    else f"Timed queue subprocess exited with code {return_code}."
+                )
+                repaired = mark_interrupted_runs_failed(
+                    database,
+                    queue_id=queue_id,
+                    message=message,
+                )
+                print(
+                    f"CYCLE {cycle} QUEUE {index}/{total} "
+                    f"{'DEADLINE' if deadline_reached else 'FAILED'} | "
+                    f"config={config.name} | exit={return_code} | "
+                    f"repaired_running_rows={repaired}",
+                    flush=True,
+                )
+            else:
+                print(
+                    f"CYCLE {cycle} QUEUE {index}/{total} COMPLETE | "
+                    f"config={config.name} | "
+                    f"utc={datetime.now(timezone.utc).isoformat()}",
+                    flush=True,
+                )
+            if deadline_reached:
+                print(
+                    f"TIMED QUEUE FINISHED | cycles={cycle - 1} | failures={failures} | "
+                    f"utc={datetime.now(timezone.utc).isoformat()}",
+                    flush=True,
+                )
+                return 1 if failures else 0
+        if not repeat_until_deadline:
+            print(
+                f"TIMED QUEUE FINISHED | cycles={cycle} | failures={failures} | "
+                f"utc={datetime.now(timezone.utc).isoformat()}",
+                flush=True,
+            )
+            return 1 if failures else 0
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--project-root", type=Path, required=True)
@@ -232,6 +351,8 @@ def main(argv=None) -> int:
     parser.add_argument("--wait-pid", type=int)
     parser.add_argument("--wait-queue-id", type=int)
     parser.add_argument("--wait-config-id", type=int)
+    parser.add_argument("--max-elapsed-seconds", type=float)
+    parser.add_argument("--repeat-until-deadline", action="store_true")
     parser.add_argument(
         "--run",
         action="append",
@@ -270,6 +391,17 @@ def main(argv=None) -> int:
         (int(queue_id), Path(config).expanduser().resolve())
         for queue_id, config in arguments.run
     ]
+    if arguments.repeat_until_deadline and arguments.max_elapsed_seconds is None:
+        parser.error("--repeat-until-deadline requires --max-elapsed-seconds")
+    if arguments.max_elapsed_seconds is not None:
+        return run_timed_queue(
+            runs,
+            project_root=project_root,
+            python_executable=arguments.python.expanduser().resolve(),
+            database=database,
+            max_elapsed_seconds=arguments.max_elapsed_seconds,
+            repeat_until_deadline=arguments.repeat_until_deadline,
+        )
     return run_queue(
         runs,
         project_root=project_root,

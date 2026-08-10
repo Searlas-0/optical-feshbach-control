@@ -1,7 +1,13 @@
 from pathlib import Path
 from types import SimpleNamespace
 
-from ofc.resilient_queue import mark_interrupted_runs_failed, run_queue
+import subprocess
+
+from ofc.resilient_queue import (
+    mark_interrupted_runs_failed,
+    run_queue,
+    run_timed_queue,
+)
 from ofc.results import Results
 from ofc.storage import ResultStore
 
@@ -74,3 +80,60 @@ def test_resilient_queue_launches_the_next_config_after_failure(tmp_path, monkey
     assert len(calls) == 2
     assert calls[0][0][-1] == str(first)
     assert calls[1][0][-1] == str(second)
+
+
+def test_timed_queue_repeats_then_closes_the_deadline_child(tmp_path, monkeypatch):
+    root = tmp_path / "project"
+    root.mkdir()
+    (root / "run.py").touch()
+    database = tmp_path / "results.sqlite3"
+    ResultStore(database)
+    config = tmp_path / "refine.yaml"
+    config.touch()
+    clock = [0.0]
+    processes = []
+    repaired = []
+
+    class FakeProcess:
+        def __init__(self, command, **options):
+            self.command = command
+            self.options = options
+            self.terminated = False
+            processes.append(self)
+
+        def wait(self, timeout=None):
+            if self.terminated:
+                return -15
+            if len(processes) == 1:
+                clock[0] += 6.0
+                return 0
+            clock[0] += float(timeout)
+            raise subprocess.TimeoutExpired(self.command, timeout)
+
+        def terminate(self):
+            self.terminated = True
+
+        def kill(self):
+            self.terminated = True
+
+    monkeypatch.setattr("ofc.resilient_queue.time.monotonic", lambda: clock[0])
+    monkeypatch.setattr("ofc.resilient_queue.subprocess.Popen", FakeProcess)
+    monkeypatch.setattr(
+        "ofc.resilient_queue.mark_interrupted_runs_failed",
+        lambda *args, **kwargs: repaired.append((args, kwargs)) or 3,
+    )
+
+    status = run_timed_queue(
+        [(101, config)],
+        project_root=root,
+        python_executable=Path("/usr/bin/python3"),
+        database=database,
+        max_elapsed_seconds=10.0,
+        repeat_until_deadline=True,
+    )
+
+    assert status == 0
+    assert len(processes) == 2
+    assert processes[1].terminated is True
+    assert repaired[0][1]["queue_id"] == 101
+    assert "deadline" in repaired[0][1]["message"]
