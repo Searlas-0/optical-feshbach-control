@@ -1,0 +1,10 @@
+results/bar_endpoint_seed1000_loose_u320.sqlite3
+results/bar_endpoint_seed_sensitivity.sqlite3
+results/bar_endpoint_seed_sensitivity_u320.sqlite3
+results/bar_seed_sensitivity.sqlite3
+results/bar_u320_crossover_screen.sqlite3
+results/results.sqlite3
+results/slurm_endpoint_strict_u320.sqlite3
+results/slurm_isolated/N100_u1280_top_peak_refinement_strict.sqlite3
+results/slurm_isolated/N100_u160_top_peak_refinement_strict.sqlite3
+results/slurm_isolated/N100_u40_top_peak_refinement_strict.sqlite3

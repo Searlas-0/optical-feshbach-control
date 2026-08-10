@@ -277,9 +277,7 @@ def test_stage_commits_search_and_array_retrieval(tmp_path):
         ]
     ) == 0
     assert {path.name for path in figure_dir.glob("*.png")} == {
-        "01_convergence.png",
-        "02_distribution.png",
-        "03_controls.png",
+        "01_sweep_summary.png",
     }
 
 
@@ -359,6 +357,47 @@ def test_walltime_chunks_do_not_create_false_schedule_change_markers(
         json.loads(stage["parameters_json"])["learning_rate_update"]
         for stage in stages
     )
+
+
+def test_history_chunks_tighten_after_one_million_equivalent_steps(
+    tmp_path, monkeypatch
+):
+    database = tmp_path / "long-history-chunks.sqlite3"
+    monkeypatch.setattr("ofc.runner.WALLTIME_CHECK_MAX_STEPS", 2)
+    monkeypatch.setattr("ofc.runner.LONG_RUN_HISTORY_THRESHOLD_STEPS", 2)
+    monkeypatch.setattr("ofc.runner.LONG_RUN_HISTORY_CHUNK_STEPS", 1)
+    document = make_document(
+        name="long_history_chunks",
+        parameters={
+            "N": 4,
+            "schedule": [(5, 1.0)],
+            "block_size": 1,
+            "J_tol": None,
+            "u_tol": None,
+            "v_tol": None,
+            "projected_gradient_tol": None,
+        },
+        runtime={
+            "initialisations": 1,
+            "use_jit": False,
+            "device": "cpu",
+            "concurrent_workers": 1,
+            "auto_halt": False,
+            "database": str(database),
+        },
+    )
+
+    run_config(document, queue_id=780)
+    results = Results(database)
+    row = results.search(queue_id=780)[0]
+    np.testing.assert_array_equal(results.history(row["run_id"])["step"], range(6))
+    with sqlite3.connect(parameter_database_path(database)) as connection:
+        stages = connection.execute(
+            """SELECT start_step, end_step FROM optimizer_stages
+               WHERE run_id=? ORDER BY stage_index""",
+            (row["run_id"],),
+        ).fetchall()
+    assert stages == [(0, 2), (2, 3), (3, 4), (4, 5)]
 
 
 def test_runner_auto_halts_whole_batch_after_three_consecutive_blocks(tmp_path):
@@ -562,6 +601,66 @@ def test_config_query_appends_stored_controls_to_random_initializations(tmp_path
     assert results.config_document(queried[0]["run_id"])["query"]["where"] == {
         "queue_id": 1001
     }
+
+
+def test_config_query_can_read_controls_from_an_isolated_source_database(tmp_path):
+    source_database = tmp_path / "source.sqlite3"
+    target_database = tmp_path / "target.sqlite3"
+    source = make_document(
+        name="cross_database_source",
+        parameters={
+            "N": 4,
+            "r_bg": 0.75,
+            "u_max": 10.0,
+            "v_max": 20.0,
+            "schedule": [(1, 1.0)],
+            "block_size": 1,
+        },
+        runtime={
+            "initialisations": 1,
+            "use_jit": False,
+            "device": "cpu",
+            "database": str(source_database),
+        },
+    )
+    run_config(source, queue_id=1101)
+    source_results = Results(source_database)
+    source_row = source_results.search(queue_id=1101)[0]
+    source_best = source_results.controls(source_row["run_id"], "best")
+
+    target = make_document(
+        name="cross_database_target",
+        parameters={
+            "N": 4,
+            "r_bg": 0.75,
+            "u_max": 10.0,
+            "v_max": 20.0,
+            "schedule": [(1, 1.0)],
+            "block_size": 1,
+        },
+        runtime={
+            "initialisations": 0,
+            "use_jit": False,
+            "device": "cpu",
+            "database": str(target_database),
+        },
+        query={
+            "database": str(source_database),
+            "where": {"run_id": source_row["run_id"]},
+            "limit": 1,
+            "control_kind": "best",
+            "resume_optimizer": False,
+            "perturbed": False,
+        },
+    )
+    run_config(target, queue_id=1102)
+    target_results = Results(target_database)
+    target_row = target_results.search(queue_id=1102)[0]
+
+    assert target_row["source_run_id"] == source_row["run_id"]
+    target_initial = target_results.controls(target_row["run_id"], "initial")
+    np.testing.assert_allclose(target_initial["u"], source_best["u"])
+    np.testing.assert_allclose(target_initial["v"], source_best["v"])
 
 
 def test_config_query_fails_clearly_when_it_matches_no_runs(tmp_path):

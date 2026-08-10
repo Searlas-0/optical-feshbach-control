@@ -1,0 +1,68 @@
+schema_version: 3
+config_id: 1431985125489836441
+name: N100_u40_fixed_parameter_seed1000_exploration_gpu
+description: N=100 u_max=40 fixed-parameter seed-sensitivity search with 1000 broad
+  random Fourier starts and 20000 high-learning-rate Adam steps.
+created_utc: '2026-08-09T21:09:42.189382+00:00'
+parameters:
+  N: 100
+  t_interval: 4.0
+  r_bg: -0.008716
+  u_isbound: true
+  v_isbound: true
+  u_max: 40.0
+  v_max: 1000.0
+  slew_limit: 0.05
+  optimizer: adam
+  schedule:
+  - - 5000
+    - 1.5
+  - - 15000
+    - 0.75
+  adam_learning_rate: 0.15
+  adam_beta1: 0.9
+  adam_beta2: 0.99
+  adam_eps: 1.0e-08
+  lbfgs_history_size: 100
+  lbfgs_max_linesearch_steps: 100
+  lbfgs_tolerance: 1.0e-12
+  peak_initial_step_size: 0.01
+  peak_min_step_size: 1.0e-12
+  peak_max_step_size: 0.1
+  peak_backtracking_factor: 0.5
+  peak_step_growth: 1.5
+  peak_armijo: 0.0001
+  peak_max_linesearch_steps: 24
+  smoothness: 1.25e-07
+  u_smooth: null
+  v_smooth: null
+  sharpness: 5.0e-08
+  u_sharp: null
+  v_sharp: null
+  block_size: 1000
+  J_tol: null
+  u_tol: null
+  v_tol: null
+  projected_gradient_tol: null
+  projected_gradient_alpha: 1.0
+runtime:
+  initialisations: 1000
+  fourier_num_modes: 6
+  fourier_rms_amplitude: 0.8
+  fourier_intensity_fraction: 0.5
+  use_jit: true
+  use_x64: true
+  device: gpu
+  concurrent_workers: 1
+  max_cases_per_batch: null
+  max_initialisations_per_batch: 75
+  max_steps_per_chunk: 2000
+  max_batch_elapsed_seconds: null
+  max_elapsed_seconds: null
+  distribute_max_elapsed_across_batches: false
+  repeat_schedule_until_stable: false
+  auto_halt: false
+  database: results/bar_seed_sensitivity.sqlite3
+query: null
+batch_ids:
+  '{"N":100,"schedule":[[5000,1.5],[15000,0.75]],"t_interval":4.0}': 3960968107906286402

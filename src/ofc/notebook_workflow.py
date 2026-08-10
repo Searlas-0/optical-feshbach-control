@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 import io
+import json
 import math
 from numbers import Real
 import os
@@ -39,6 +40,7 @@ from .plotting import (
     plot_controls,
     plot_double_sweep_summary,
     plot_single_sweep_summary,
+    plot_standard_summary,
     plot_triple_sweep_summary,
     plot_yield_distribution,
     varying_sweep_parameters,
@@ -140,6 +142,22 @@ class NotebookQuery:
         sweep = self.sweep(sweep_parameter)
         return plot_controls(self.best_runs(sweep.name), sweep=sweep, **options)
 
+    def plot_summary(
+        self,
+        *,
+        sweep_parameter: str | None = None,
+        history_points: int = 1200,
+    ):
+        """Plot the queried rows as one unified score/strip/control summary."""
+
+        sweep = self.sweep(sweep_parameter)
+        return plot_standard_summary(
+            self.rows,
+            sweep=sweep,
+            history_points=history_points,
+            **self._summary_loaders,
+        )
+
     @property
     def _summary_loaders(self):
         return {
@@ -207,6 +225,7 @@ class RunNotebook:
         ).resolve()
         self.active_queue_id: int | None = None
         self.local_process_id: int | None = None
+        self.strict_monitor_process_id: int | None = None
         self.local_log_path: Path | None = None
         self.config_document: ConfigDocument | None = None
         os.environ.setdefault("MPLCONFIGDIR", "/tmp/ofc-matplotlib")
@@ -267,6 +286,59 @@ class RunNotebook:
         self.config_document = load_config(self.config_path)
         print(f"Created config: {self.config_path.relative_to(self.project_root)}")
         return self.config_document
+
+    def create_config_group(
+        self,
+        *,
+        activated: bool,
+        documents: Sequence[ConfigDocument],
+        reuse_existing: bool = False,
+    ) -> tuple["RunNotebook", ...]:
+        """Create or load an ordered group of immutable dependent configs."""
+
+        if not isinstance(activated, bool):
+            raise TypeError("Activated must be a bool.")
+        if not isinstance(reuse_existing, bool):
+            raise TypeError("reuse_existing must be a bool.")
+        selected_documents = tuple(documents)
+        if not selected_documents:
+            raise ValueError("documents cannot be empty.")
+        if any(not isinstance(document, ConfigDocument) for document in selected_documents):
+            raise TypeError("documents must contain ConfigDocument instances.")
+        names = tuple(document.name for document in selected_documents)
+        if len(set(names)) != len(names):
+            raise ValueError("Grouped config document names must be unique.")
+        workflows = tuple(
+            RunNotebook(name, project_root=self.project_root) for name in names
+        )
+        existing = tuple(workflow.config_path.is_file() for workflow in workflows)
+        if not activated:
+            count = sum(existing)
+            print(
+                "Grouped config creation is disabled (Activated=False); "
+                f"found {count}/{len(workflows)} existing configs."
+            )
+            return workflows
+        if any(existing):
+            if not all(existing):
+                raise FileExistsError(
+                    "Only part of the grouped config set exists. Choose a new "
+                    "experiment name or complete/remove the partial set explicitly."
+                )
+            if not reuse_existing:
+                raise FileExistsError(
+                    "Every grouped config already exists. Keep Activated=False or "
+                    "set reuse_existing=True without changing the arguments."
+                )
+            for workflow in workflows:
+                workflow.load_config()
+            print(f"Reusing {len(workflows)} immutable grouped configs.")
+            return workflows
+        for workflow, document in zip(workflows, selected_documents):
+            write_config(document, workflow.config_path)
+            workflow.config_document = load_config(workflow.config_path)
+        print(f"Created {len(workflows)} grouped configs in run_config/.")
+        return workflows
 
     def run_local(
         self,
@@ -580,6 +652,113 @@ class RunNotebook:
                 f"configs={len(workflows)}"
             )
         return selected_queue_id
+
+    def launch_strict_refinement_monitor(
+        self,
+        *,
+        activated: bool,
+        bar_process_id: int | None,
+        endpoint_settings: Mapping[int, Mapping[str, Mapping[str, Any]]],
+        resolutions: Sequence[int],
+        bar_database: str | Path,
+        strict_database: str | Path,
+        state_path: str | Path,
+        python_executable: str | Path | None = None,
+        exploration_initialisations: int = 1_000,
+        loose_count: int = 20,
+        parameter_label_suffix: str = "_bar_v2",
+        strict_max_elapsed_seconds: float = 4 * 60 * 60,
+        poll_seconds: float = 60.0,
+        objective_epsilon: float = 1e-9,
+        partition: str = "zen5,epyc",
+        slurm_time: str = "04:15:00",
+        cpus: int = 2,
+        memory: str = "4G",
+        agreement_objective_tolerance: float = 0.01,
+        agreement_control_tolerance: float = 0.01,
+        log_path: str | Path = "logs/endpoint_strict_refinement_monitor.log",
+    ) -> int | None:
+        """Launch the detached bar-to-Slurm strict-incumbent monitor."""
+
+        if not isinstance(activated, bool):
+            raise TypeError("Activated must be a bool.")
+        if not activated:
+            print("Strict refinement monitoring is disabled (Activated=False).")
+            return None
+        if bar_process_id is None or isinstance(bar_process_id, bool) or bar_process_id < 1:
+            raise ValueError("bar_process_id must identify the detached bar pipeline.")
+        if os.environ.get("SLURM_JOB_ID"):
+            raise RuntimeError("The strict refinement monitor must launch outside Slurm.")
+        host = socket.gethostname().split(".", 1)[0]
+        if host != "bar":
+            raise RuntimeError(f"Strict monitoring requires host 'bar', found {host!r}.")
+        if not endpoint_settings or not resolutions:
+            raise ValueError("endpoint_settings and resolutions cannot be empty.")
+        selected_python = str(python_executable or sys.executable)
+        command = [
+            selected_python,
+            "-m",
+            "ofc.strict_refinement_monitor",
+            "--project-root",
+            str(self.project_root),
+            "--python",
+            selected_python,
+            "--bar-database",
+            str(bar_database),
+            "--strict-database",
+            str(strict_database),
+            "--state-path",
+            str(state_path),
+            "--bar-pid",
+            str(bar_process_id),
+            "--endpoint-settings",
+            json.dumps(endpoint_settings, sort_keys=True, separators=(",", ":")),
+            "--resolutions",
+            json.dumps(list(resolutions), separators=(",", ":")),
+            "--exploration-initialisations",
+            str(exploration_initialisations),
+            "--loose-count",
+            str(loose_count),
+            "--parameter-label-suffix",
+            parameter_label_suffix,
+            "--strict-max-elapsed-seconds",
+            str(strict_max_elapsed_seconds),
+            "--poll-seconds",
+            str(poll_seconds),
+            "--objective-epsilon",
+            str(objective_epsilon),
+            "--partition",
+            partition,
+            "--slurm-time",
+            slurm_time,
+            "--cpus",
+            str(cpus),
+            "--memory",
+            memory,
+            "--agreement-objective-tolerance",
+            str(agreement_objective_tolerance),
+            "--agreement-control-tolerance",
+            str(agreement_control_tolerance),
+        ]
+        selected_log_path = Path(log_path).expanduser()
+        if not selected_log_path.is_absolute():
+            selected_log_path = (self.project_root / selected_log_path).resolve()
+        selected_log_path.parent.mkdir(parents=True, exist_ok=True)
+        with selected_log_path.open("ab") as output:
+            process = subprocess.Popen(
+                command,
+                cwd=self.project_root,
+                stdout=output,
+                stderr=subprocess.STDOUT,
+                start_new_session=True,
+            )
+        self.strict_monitor_process_id = process.pid
+        print(
+            f"Detached strict refinement monitor started; pid={process.pid}; "
+            f"bar_pid={bar_process_id}"
+        )
+        print(f"Log: {selected_log_path}")
+        return process.pid
 
     def submit_slurm(
         self,

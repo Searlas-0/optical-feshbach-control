@@ -56,6 +56,14 @@ PHYSICAL_VALUES = {
     "best_max_abs_dv_dt",
     "best_max_abs_d2u_dt2",
     "best_max_abs_d2v_dt2",
+    "best_grid_refinement_base_objective",
+    "best_objective_refined_grid",
+    "best_grid_refinement_relative_error",
+    "best_grid_refinement_refined_N",
+    "best_grid_refinement_tolerance",
+    "best_grid_refinement_y_floor",
+    "best_grid_refinement_passed",
+    "best_grid_refinement_status",
 }
 
 

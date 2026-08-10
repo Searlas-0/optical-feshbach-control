@@ -97,6 +97,8 @@ class ResolvedConfig:
     v_tol: float | None = 1e-4
     projected_gradient_tol: float | None = 1e-4
     projected_gradient_alpha: float = 1.0
+    grid_refinement_tol: float = 1e-2
+    grid_refinement_y_floor: float = 1e-12
 
     def __post_init__(self) -> None:
         integer_fields = {
@@ -130,6 +132,8 @@ class ResolvedConfig:
             "peak_min_step_size": self.peak_min_step_size,
             "peak_max_step_size": self.peak_max_step_size,
             "projected_gradient_alpha": self.projected_gradient_alpha,
+            "grid_refinement_tol": self.grid_refinement_tol,
+            "grid_refinement_y_floor": self.grid_refinement_y_floor,
         }
         for name, value in positive.items():
             if isinstance(value, bool) or not isinstance(value, Real):
@@ -352,6 +356,7 @@ class InitializationQuery:
     """Select stored controls to append to the random Fourier starts."""
 
     where: Mapping[str, Any]
+    database: str | None = None
     limit: int | None = None
     order_by: str = "best_score"
     descending: bool = True
@@ -371,6 +376,11 @@ class InitializationQuery:
         if any(not isinstance(name, str) or not name for name in where):
             raise ValueError("query.where filter names must be non-empty strings.")
         object.__setattr__(self, "where", where)
+
+        if self.database is not None:
+            if not isinstance(self.database, str) or not self.database.strip():
+                raise ValueError("query.database must be a non-empty path or null.")
+            object.__setattr__(self, "database", self.database.strip())
 
         if self.limit is not None:
             if (
@@ -827,6 +837,15 @@ def load_config(path: str | Path) -> ConfigDocument:
     if not 0 < config_id <= ID_MAX:
         raise ValueError("config_id must be a non-zero signed-64-bit integer.")
     parameters = dict(raw.get("parameters") or {})
+    parameters.setdefault("grid_refinement_y_floor", 1e-12)
+    if "grid_refinement_tol" not in parameters:
+        j_tolerance = parameters.get("J_tol")
+        strict = "strict" in str(raw.get("name", "")).lower() or (
+            isinstance(j_tolerance, Real)
+            and not isinstance(j_tolerance, bool)
+            and float(j_tolerance) <= 1e-6
+        )
+        parameters["grid_refinement_tol"] = 1e-3 if strict else 1e-2
     runtime_values = dict(raw.get("runtime") or {})
     if version == 2:
         # Preserve exact rerun behavior for immutable pre-auto-halt configs.

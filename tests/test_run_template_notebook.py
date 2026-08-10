@@ -58,10 +58,7 @@ REQUIRED_WORKFLOW_CELLS = [
     "submit-slurm",
     "query-config-run",
     "figure-output-controls",
-    "plot-figure-1",
-    "plot-figure-2",
-    "plot-figure-3",
-    "plot-single-sweep-summary",
+    "plot-sweep-summary",
     "plot-double-sweep-summary",
     "plot-triple-sweep-summary",
 ]
@@ -193,59 +190,16 @@ def test_template_guards_mutating_cells_and_delegates_all_mechanics():
 
 def test_template_exposes_standard_and_multi_sweep_plot_arguments():
     cells = _cells_by_id()
-    figure_1 = _source(cells["plot-figure-1"])
-    figure_2 = _source(cells["plot-figure-2"])
-    figure_3 = _source(cells["plot-figure-3"])
-    combined = figure_1 + figure_2 + figure_3
+    summary = _source(cells["plot-sweep-summary"])
 
-    assert "_plot_sweep_" not in combined
-
-    assert "log_base_x=None" in figure_1
-    assert "log_base_y=None" in figure_1
-    assert "sweep_parameter=sweep_parameter" in figure_1
-    assert 'base_x="axis"' in figure_1
-    assert 'base_y="axis"' in figure_1
-    assert "x_multiplier=1" in figure_1
-    assert "y_multiplier=1" in figure_1
-    assert "x_range=None" in figure_1
-    assert "y_range=None" in figure_1
-    assert "x_label=None" in figure_1
-    assert "y_label=None" in figure_1
-    assert "log_base_y=None" in figure_2
-    assert "sweep_parameter=sweep_parameter" in figure_2
-    assert 'base_y="axis"' in figure_2
-    assert "y_multiplier=1" in figure_2
-    assert "y_range=None" in figure_2
-    assert "x_label=None" in figure_2
-    assert "y_label=None" in figure_2
-    assert "point_size=24" in figure_2
-    assert "line_alpha=0.22" in figure_2
-    assert "seed_sensitivity_log_base_y=10" in figure_2
-    assert "seed_sensitivity_base_y=None" in figure_2
-    assert "seed_sensitivity_y_multiplier=1" in figure_2
-    assert "seed_sensitivity_y_range=None" in figure_2
-    assert "seed_sensitivity_tolerance=0.01" in figure_2
-    assert "log_base_x" not in figure_2
-    assert "base_x" not in figure_2
-    assert "x_multiplier" not in figure_2
-    assert "x_range" not in figure_2
-    assert "sweep_parameter=sweep_parameter" in figure_3
-    assert "log_base_x=None" in figure_3
-    assert "log_base_y=None" in figure_3
-    assert 'base_x="axis"' in figure_3
-    assert 'base_y="axis"' in figure_3
-    assert "x_multiplier=1" in figure_3
-    assert "y_multiplier=1" in figure_3
-    assert "x_range=None" in figure_3
-    assert "y_range=None" in figure_3
-    assert "x_label=None" in figure_3
-    assert "y_label=None" in figure_3
-
-    single = _source(cells["plot-single-sweep-summary"])
+    assert "_plot_sweep_" not in summary
+    assert "query_result.plot_summary(" in summary
+    assert "sweep_parameter = None" in summary
+    assert "sweep_parameter=sweep_parameter" in summary
+    assert "history_points = 1200" in summary
     double = _source(cells["plot-double-sweep-summary"])
     triple = _source(cells["plot-triple-sweep-summary"])
     output_controls = _source(cells["figure-output-controls"])
-    assert "query_result.plot_single_sweep_summary(" in single
     assert "separate_sweep_parameter" in double
     assert "colour_sweep_parameter" in double
     assert "row_sweep_parameter" in triple
@@ -253,9 +207,9 @@ def test_template_exposes_standard_and_multi_sweep_plot_arguments():
     assert "colour_sweep_parameter" in triple
     assert "preview_dpi =" in output_controls
     assert "save_dpi =" in output_controls
-    for summary in (single, double, triple):
-        assert "preview_dpi=preview_dpi" in summary
-        assert "save_dpi=save_dpi" in summary
+    for plot_source in (summary, double, triple):
+        assert "preview_dpi=preview_dpi" in plot_source
+        assert "save_dpi=save_dpi" in plot_source
 
 
 def test_u_max_smoothness_sharpness_notebook_is_balanced_and_canonical():
@@ -357,7 +311,7 @@ def test_cap_adam_continuations_are_split_into_canonical_declarative_notebooks()
         config = _source(cells["create-config"])
         run = _source(cells["run-locally"])
         query = _source(cells["query-config-run"])
-        figure_2 = _source(cells["plot-figure-2"])
+        summary = _source(cells["plot-sweep-summary"])
         parameters = _literal_assignment(config, "parameters")
         runtime = _literal_assignment(config, "runtime")
         initialization_query = _literal_assignment(config, "initialization_query")
@@ -395,7 +349,7 @@ def test_cap_adam_continuations_are_split_into_canonical_declarative_notebooks()
         assert "workflow.run_on_bar_gpu(" in run
         assert "detached = True" in run
         assert 'sweep_parameters = ["adam_learning_rate", "adam_beta1", "adam_beta2"]' in query
-        assert "seed_sensitivity_tolerance=0.01" in figure_2
+        assert "query_result.plot_summary(" in summary
 
 
 def test_three_cap_long_gpu_notebook_is_grouped_declarative_and_exact():

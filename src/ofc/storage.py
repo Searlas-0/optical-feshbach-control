@@ -447,6 +447,18 @@ class ResultStore:
             ).fetchone()
         return int(row["config_document_id"])
 
+    def save_physical_values(self, records: Mapping[int, Mapping[str, object]]) -> None:
+        """Upsert calculated scalar diagnostics for existing physical runs."""
+
+        with self.transaction() as connection:
+            for run_id, values in records.items():
+                self._write_values(
+                    connection,
+                    "physical_values",
+                    int(run_id),
+                    dict(values),
+                )
+
     def prepare_batch(
         self,
         record: dict,

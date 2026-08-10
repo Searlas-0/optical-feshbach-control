@@ -66,6 +66,8 @@ def default_parameters() -> dict[str, Any]:
         "v_tol": 1e-4,
         "projected_gradient_tol": 1e-4,
         "projected_gradient_alpha": 1.0,
+        "grid_refinement_tol": 1e-2,
+        "grid_refinement_y_floor": 1e-12,
     }
 
 

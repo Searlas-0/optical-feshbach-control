@@ -81,12 +81,19 @@ def test_initialization_query_validation_and_defaults():
     query = InitializationQuery(where={"config_name": "source"})
 
     assert query.limit is None
+    assert query.database is None
     assert query.order_by == "best_score"
     assert query.descending is True
     assert query.control_kind == "best"
     assert query.resume_optimizer is False
     assert query.perturbed is True
     assert query.perturbation_levels == DEFAULT_QUERY_PERTURBATION_LEVELS
+
+    assert InitializationQuery(
+        where={"run_id": 1}, database="results/source.sqlite3"
+    ).database == "results/source.sqlite3"
+    with pytest.raises(ValueError, match="database must be a non-empty path"):
+        InitializationQuery(where={"run_id": 1}, database="")
 
     with pytest.raises(ValueError, match="non-empty mapping"):
         InitializationQuery(where={})

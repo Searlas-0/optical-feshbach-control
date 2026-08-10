@@ -9,6 +9,8 @@ build/
 dist/
 results/*.sqlite3
 results/*.sqlite3-*
+results/*.zip
+results/slurm_isolated/
 logs/*
 !logs/.gitkeep
 
@@ -23,3 +25,5 @@ reports/*.log
 reports/*.run.xml
 reports/*.toc
 reports/*-SAVE-ERROR
+# Local agent coordination records (persistent user instruction).
+/agents/

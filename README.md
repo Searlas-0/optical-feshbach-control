@@ -61,11 +61,13 @@ sbatch slurm/u_cap_sweep_cheap.slurm
 sbatch slurm/u_cap_sweep_expensive.slurm
 ```
 
-Every production configuration writes to the single canonical pair
-`results/results.sqlite3` and `results/results.parameters.sqlite3`. This is the
-default in both the validated config schema and `make_config.py`; do not create
-experiment-specific database filenames. A custom `runtime.database` is retained
-only for isolated tests or deliberate scratch work.
+The default production target is the canonical pair `results/results.sqlite3`
+and `results/results.parameters.sqlite3`. Deliberately distributed or
+replaceable long-running experiments may use named scratch pairs so a laptop,
+the `bar` GPU, and Slurm jobs can progress independently without transferring a
+multi-gigabyte live database. Such isolation is an orchestration choice, not a
+SQLite requirement; scratch pairs must retain both files and their immutable
+config provenance.
 
 The runner validates `SLURM_CPUS_PER_TASK` before starting numerical work and
 fails clearly if the allocation is smaller than a config's worker count. The
@@ -83,6 +85,21 @@ Each run stores both the requested `device` and the resolved
 bar-GPU launchers also set `XLA_PYTHON_CLIENT_PREALLOCATE=false`, so member
 sharding reduces actual VRAM use instead of every JAX process reserving most of
 the card up front.
+
+### RTX 4060 laptop worker
+
+The underexplored-cap campaign is partitioned between `bar` and an 8 GB RTX
+4060 Laptop GPU. From a clean Linux or WSL2 clone, the laptop user runs only:
+
+```bash
+bash scripts/local/run_rtx4060.sh
+```
+
+The launcher verifies `origin/main`, installs an isolated CUDA-enabled JAX
+environment, validates GPU discovery, and resumes the committed laptop
+manifest. It needs no downloaded input database because its assigned lanes
+start from fresh Fourier seeds. See [`scripts/local/README.md`](scripts/local/README.md)
+for the assigned caps and the result bundle returned to the server.
 
 ## Configuration and sweeps
 
@@ -502,11 +519,16 @@ Persistence is separated by meaning and joined by the unique `run_id`:
 - `results/results.parameters.sqlite3` contains exact config documents,
   resolved per-run settings, execution provenance, and optimizer-stage values.
 
-There is one canonical pair for the whole project, not one pair per experiment.
-Both databases use generic name/value and named-array records. Adding a config
-field, optimizer, calculated scalar, or diagnostic therefore does not require a
-column migration or deletion of earlier results. SQLite WAL mode permits
-concurrent workers, and compressed NumPy blobs retain complete arrays.
+The project has one default canonical pair, while explicitly isolated scratch
+work may use another pair. Both databases use generic name/value and named-array
+records. Adding a config field, optimizer, calculated scalar, or diagnostic
+therefore does not require a column migration or deletion of earlier results.
+SQLite WAL mode permits concurrent readers and workers. SQLite still serializes
+each individual writer, but the runner uses short `BEGIN IMMEDIATE`
+transactions with a long busy timeout, so several processes can safely share a
+pair. Scratch pairs primarily reduce write contention, failure blast radius,
+transfer size, and accidental cross-experiment queries; they are not needed
+merely to allow another process to read.
 
 For every initialization, the physical database stores `N`, `T`, `r_bg`,
 `u_max`, `v_max`, full score/objective/penalty histories, and both raw and
@@ -617,26 +639,21 @@ Useful indexed fields include `config_name`, `config_file`, `config_id`,
 `best_penalty`, `best_step`, `best_max_abs_du_dt`, `best_max_abs_dv_dt`,
 `best_max_abs_d2u_dt2`, and `best_max_abs_d2v_dt2`.
 
-## Standard three-figure plotting
+## Unified standard plotting
 
 Running `plot.py` with no query selects the most recently stored completed
-config and writes three separate PNG files. The same universal sweep plots are
-used for configuration sweeps and repeated initializations. If no configuration
-parameter varies, initializations are shown as a categorical, one-based
-numbered sweep; the full Fourier coefficient vector is deliberately not reduced
-to a misleading scalar ordering.
+config and writes one unified PNG summary. If no configuration parameter
+varies, all selected initializations are displayed in one summary rectangle.
 
 When exactly one configuration parameter varies, `plot.py` automatically
-switches to parameter-sweep mode:
+creates one row per parameter value. Every row contains:
 
-- Figures 1 and 3 show only the best-score initialization at each sweep value,
-  with a consistent `viridis` colour scale.
-- Figure 2 uses the swept parameter as its x-axis and scatters every
-  initialization, with the best-score result at each value connected above it.
-- Strictly positive logarithmic data use an ordinary log scale, while ranges
-  containing zero or negative values use a symmetric-log scale.
-- Unstable best traces remain visible with reduced opacity in Figures 1 and 3;
-  stability does not change the Figure 2 scatter styling.
+- the selected runs' regularized-score histories, with the median and 10th–90th
+  percentile spread calculated only from those displayed runs;
+- dashed vertical markers at actual learning-rate changes;
+- a right-hand molecular-objective strip sharing the history panel's vertical
+  scale, with the seed spread $S_J$ shown above it; and
+- the raw optimized $u$ and $\nu$ controls below.
 
 ```bash
 python plot.py
@@ -655,18 +672,15 @@ python plot.py --config-run 2 --output-dir figures/second_latest
 ```
 
 If a selection varies more than one configuration parameter, filter it down to
-one sweep or provide `--sweep-parameter NAME`; this avoids silently assigning a
-misleading Figure 2 x-axis.
+one sweep or provide `--sweep-parameter NAME`.
 
 The pure functions `plot_convergence()`, `plot_yield_distribution()`, and
 `plot_controls()` accept an optional `sweep` specification and otherwise
-construct the numbered initialization sweep. `plot_standard_figures()` and
-`save_standard_figures()` infer that sweep automatically. Pass
-`sweep_parameter="u_max"` when selecting one axis from multidimensional data.
-The standard view applies the notebook style universally: Figure 1 uses base-10
-x spacing and base-2 y spacing with actual numeric tick labels, Figure 2 uses a
-base-10 y-axis and 12-point markers, and Figure 3 retains full-opacity stable
-traces and faded unstable traces.
+construct the numbered initialization sweep. `plot_standard_summary()`,
+`plot_standard_figures()`, and `save_standard_figures()` infer the standard
+selection automatically. Pass `sweep_parameter="u_max"` when selecting one
+axis from multidimensional data. The legacy individual plotting functions
+remain available for bespoke analysis.
 
 The scatter and line plotting functions accept independent keyword-only
 `log_base_x` and `log_base_y` settings. Their default is `None`, which leaves

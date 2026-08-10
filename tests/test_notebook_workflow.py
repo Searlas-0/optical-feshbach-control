@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import subprocess
 from types import SimpleNamespace
 
@@ -38,6 +39,35 @@ def test_notebook_workflow_discovers_root_and_guards_every_mutating_action(tmp_p
     )
     assert document.name == "guarded_run"
     assert workflow.config_path.is_file()
+
+
+def test_grouped_config_creation_writes_an_ordered_immutable_set(tmp_path):
+    root = _project(tmp_path)
+    workflow = RunNotebook("group_controller", project_root=root)
+    from ofc.config import make_document
+
+    documents = (
+        make_document(name="group_first", parameters={"N": 4}),
+        make_document(name="group_second", parameters={"N": 8}),
+    )
+
+    disabled = workflow.create_config_group(
+        activated=False,
+        documents=documents,
+    )
+    assert [item.run_name for item in disabled] == ["group_first", "group_second"]
+    assert not any(item.config_path.exists() for item in disabled)
+
+    created = workflow.create_config_group(
+        activated=True,
+        documents=documents,
+    )
+    assert all(item.config_path.is_file() for item in created)
+    assert [item.load_config().config_id for item in created] == [
+        document.config_id for document in documents
+    ]
+    with pytest.raises(FileExistsError, match="already exists"):
+        workflow.create_config_group(activated=True, documents=documents)
 
 
 def test_grouped_local_execution_can_detach_with_one_queue_and_log(
@@ -126,6 +156,73 @@ def test_grouped_local_execution_can_wait_for_an_existing_process(
     ]
     assert calls["command"][-2:] == [str(first.config_path), str(second.config_path)]
     assert calls["options"]["start_new_session"] is True
+
+
+def test_strict_monitor_launch_is_detached_and_receives_endpoint_manifest(
+    tmp_path, monkeypatch
+):
+    root = _project(tmp_path)
+    workflow = RunNotebook("endpoint_controller", project_root=root)
+    calls = {}
+
+    class FakeProcess:
+        pid = 7654
+
+    def fake_popen(command, **options):
+        calls["command"] = command
+        calls["options"] = options
+        return FakeProcess()
+
+    monkeypatch.delenv("SLURM_JOB_ID", raising=False)
+    monkeypatch.setattr("ofc.notebook_workflow.socket.gethostname", lambda: "bar")
+    monkeypatch.setattr("ofc.notebook_workflow.subprocess.Popen", fake_popen)
+    settings = {
+        320: {
+            "low": {
+                "adam_learning_rate": 0.05,
+                "adam_beta1": 0.95,
+                "adam_beta2": 0.99,
+                "smoothness": 1e-9,
+                "sharpness": 1e-10,
+            },
+            "high": {
+                "adam_learning_rate": 0.05,
+                "adam_beta1": 0.95,
+                "adam_beta2": 0.99,
+                "smoothness": 1e-6,
+                "sharpness": 1e-7,
+            },
+        }
+    }
+
+    process_id = workflow.launch_strict_refinement_monitor(
+        activated=True,
+        bar_process_id=4321,
+        endpoint_settings=settings,
+        resolutions=[100, 200],
+        bar_database="results/bar.sqlite3",
+        strict_database="results/strict.sqlite3",
+        state_path="logs/strict-state.json",
+        loose_count=1_000,
+        parameter_label_suffix="_bar_v3_loose1000",
+        log_path="logs/strict-monitor.log",
+    )
+
+    assert process_id == 7654
+    assert calls["command"][1:3] == ["-m", "ofc.strict_refinement_monitor"]
+    settings_index = calls["command"].index("--endpoint-settings") + 1
+    assert json.loads(calls["command"][settings_index]) == {
+        "320": settings[320]
+    }
+    assert calls["command"][
+        calls["command"].index("--loose-count") + 1
+    ] == "1000"
+    assert calls["command"][
+        calls["command"].index("--parameter-label-suffix") + 1
+    ] == "_bar_v3_loose1000"
+    assert calls["options"]["start_new_session"] is True
+    assert workflow.strict_monitor_process_id == 7654
+    assert (root / "logs" / "strict-monitor.log").is_file()
 
 
 def test_bar_gpu_execution_verifies_host_and_detaches_single_config(

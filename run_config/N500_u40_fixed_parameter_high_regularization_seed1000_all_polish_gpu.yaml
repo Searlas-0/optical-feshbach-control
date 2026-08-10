@@ -1,0 +1,90 @@
+schema_version: 3
+config_id: 6915947095807655285
+name: N500_u40_fixed_parameter_high_regularization_seed1000_all_polish_gpu
+description: N=500 u_max=40 monotone peak polish of every saved exploratory seed for
+  2000 steps.
+created_utc: '2026-08-09T21:24:29.615363+00:00'
+parameters:
+  N: 500
+  t_interval: 4.0
+  r_bg: -0.008716
+  u_isbound: true
+  v_isbound: true
+  u_max: 40.0
+  v_max: 1000.0
+  slew_limit: 0.05
+  optimizer: peak_refinement
+  schedule:
+  - - 2000
+    - 1.0
+  adam_learning_rate: 0.15
+  adam_beta1: 0.9
+  adam_beta2: 0.99
+  adam_eps: 1.0e-08
+  lbfgs_history_size: 100
+  lbfgs_max_linesearch_steps: 100
+  lbfgs_tolerance: 1.0e-12
+  peak_initial_step_size: 0.01
+  peak_min_step_size: 1.0e-12
+  peak_max_step_size: 0.1
+  peak_backtracking_factor: 0.5
+  peak_step_growth: 1.5
+  peak_armijo: 0.0001
+  peak_max_linesearch_steps: 24
+  smoothness: 3.9528470752104736e-06
+  u_smooth: null
+  v_smooth: null
+  sharpness: 1.5811388300841896e-06
+  u_sharp: null
+  v_sharp: null
+  block_size: 250
+  J_tol: null
+  u_tol: null
+  v_tol: null
+  projected_gradient_tol: null
+  projected_gradient_alpha: 1.0
+runtime:
+  initialisations: 0
+  fourier_num_modes: 6
+  fourier_rms_amplitude: 0.8
+  fourier_intensity_fraction: 0.5
+  use_jit: true
+  use_x64: true
+  device: gpu
+  concurrent_workers: 1
+  max_cases_per_batch: null
+  max_initialisations_per_batch: 16
+  max_steps_per_chunk: 250
+  max_batch_elapsed_seconds: null
+  max_elapsed_seconds: null
+  distribute_max_elapsed_across_batches: false
+  repeat_schedule_until_stable: false
+  auto_halt: false
+  database: results/bar_endpoint_seed_sensitivity.sqlite3
+query:
+  where:
+    status: complete
+    config_id: 2305351814965375311
+    config_name: N500_u40_fixed_parameter_high_regularization_seed1000_exploration_gpu
+    N: 500
+    u_max: 40.0
+    smoothness: 3.9528470752104736e-06
+    sharpness: 1.5811388300841896e-06
+  limit: null
+  order_by: best_score
+  descending: true
+  control_kind: best
+  resume_optimizer: false
+  perturbed: false
+  perturbation_levels:
+  - 0.0005
+  - 0.001
+  - 0.0025
+  - 0.005
+  - 0.01
+  match_parameters: []
+  discover_parameters: []
+  discover_group_parameters: []
+  fallback_where: null
+batch_ids:
+  '{"N":500,"schedule":[[2000,1.0]],"t_interval":4.0}': 2114668788058806204

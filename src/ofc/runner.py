@@ -33,6 +33,7 @@ from .config import (
     random_id,
 )
 from .filtering import parse_value
+from .grid_refinement import grid_refinement_diagnostics
 from .initialization import random_fourier_controls, stored_controls_to_raw
 from .optimization import (
     BatchedAdamOptimizer,
@@ -47,9 +48,21 @@ from .storage import ResultStore
 QUERY_PERTURBATION_SEED_MULTIPLIER = 0x9E3779B1
 QUERY_PERTURBATION_INDEX_MULTIPLIER = 0x85EBCA6B
 WALLTIME_CHECK_MAX_STEPS = 10_000
+LONG_RUN_HISTORY_THRESHOLD_STEPS = 1_000_000
+LONG_RUN_HISTORY_CHUNK_STEPS = 1_000
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _history_chunk_step_limit(runtime, start_step: int) -> int:
+    """Bound disposable in-memory trace arrays, tightening after one million steps."""
+
+    configured = runtime.max_steps_per_chunk or WALLTIME_CHECK_MAX_STEPS
+    if start_step >= LONG_RUN_HISTORY_THRESHOLD_STEPS:
+        return min(configured, LONG_RUN_HISTORY_CHUNK_STEPS)
+    steps_to_threshold = LONG_RUN_HISTORY_THRESHOLD_STEPS - start_step
+    return min(configured, steps_to_threshold)
 
 
 def _validate_slurm_cpu_allocation(documents: Iterable[ConfigDocument]) -> None:
@@ -220,7 +233,7 @@ def _load_query_starts(
     query = document.query
     if query is None:
         return ()
-    results = Results(store.path)
+    results = Results(query.database or store.path)
     controls_by_run = {}
     optimizer_states_by_run = {}
 
@@ -342,7 +355,7 @@ def _discover_query_cases(document: ConfigDocument, store: ResultStore):
         for name, value in query.where.items()
     }
     filters.setdefault("status", "complete")
-    rows = Results(store.path).search(
+    rows = Results(query.database or store.path).search(
         order_by=query.order_by,
         descending=query.descending,
         **filters,
@@ -803,8 +816,8 @@ def _run_batch(
                 member_count = len(active_members)
                 if first_case.optimizer == "adam" and schedule_change:
                     optimizer_step_sizes = optimizer_step_sizes * multiplier
-                max_steps_per_chunk = (
-                    runtime.max_steps_per_chunk or WALLTIME_CHECK_MAX_STEPS
+                max_steps_per_chunk = _history_chunk_step_limit(
+                    runtime, start_step
                 )
                 steps = min(
                     stage_steps_remaining,
@@ -874,6 +887,27 @@ def _run_batch(
                 )
                 best_controls = jax.device_get(
                     _bounded_batch(physics, state.best_raw, parameters, runtime.use_jit)
+                )
+                active_cases = [
+                    batch.cases[_flat_member(int(index), initialisations)[0]]
+                    for index in active_members
+                ]
+                grid_diagnostics = jax.device_get(
+                    grid_refinement_diagnostics(
+                        best_controls,
+                        output["best_objective"],
+                        N=batch.N,
+                        r_bg=parameters["r_bg"],
+                        t_interval=parameters["t_interval"],
+                        tolerance=np.asarray(
+                            [case.grid_refinement_tol for case in active_cases]
+                        ),
+                        y_floor=np.asarray(
+                            [case.grid_refinement_y_floor for case in active_cases]
+                        ),
+                        dtype=dtype,
+                        use_jit=runtime.use_jit,
+                    )
                 )
                 final_controls = jax.device_get(
                     _bounded_batch(physics, state.raw, parameters, runtime.use_jit)
@@ -966,7 +1000,12 @@ def _run_batch(
                             for name, values in output[
                                 "best_stability_values"
                             ].items()
-                        },
+                        }
+                        | {
+                            name: np.asarray(values)[member_index].item()
+                            for name, values in grid_diagnostics.items()
+                        }
+                        | {"best_grid_refinement_status": "computed"},
                     }
                     if stored_stage_index == 0:
                         record["initial"] = {
@@ -1057,7 +1096,27 @@ def _run_batch(
                     f"elapsed {elapsed_seconds / 3600:.2f} h",
                     flush=True,
                 )
-                del output, device_output, member_records
+                # Histories are calculation outputs, not optimizer state. They
+                # have now been encoded and committed as one on-disk chunk, so
+                # discard every host/device reference before the next chunk.
+                # Only current optimizer/stability state and best checkpoints
+                # remain resident, irrespective of total run length.
+                del (
+                    output,
+                    device_output,
+                    member_records,
+                    best_controls,
+                    final_controls,
+                    raw_controls,
+                    grid_diagnostics,
+                    active_cases,
+                    adam_states,
+                    stored_tolerances,
+                    optimizer_step_sizes_host,
+                )
+                if stored_stage_index == 0:
+                    initial_raw_host = None
+                    initial_controls = None
                 gc.collect()
                 if deadline_reached:
                     batch_time_limited = True
